@@ -1,19 +1,11 @@
-%%%-------------------------------------------------------------------
-%%% @author cryoflamer
-%%% @copyright (C) 2023
-%%% @doc
-%%%
-%%% @end
-%%% Created : 27. Feb 2023 7:57 PM
-%%%-------------------------------------------------------------------
--author("cryoflamer").
-%%
-%%JID = exampleJid@nope.org
-%%password = difficultPassword
-%%muc_room = exampleMuc@muc.nope.org segunda@muc.sip.org
-%%nick = jabbergram
-%%token = jabbergramBotTokken
-%%group = -10293943920 120301203
+-include_lib("escalus/include/escalus.hrl").
 
--record(ebrigebot_xmpp, {type = tg, jid, password, nick, token}).
--record(ebrigebot_muc, {muc_room, group}).
+-record(ebridgebot_xmpp, {
+	jid_bot :: {#jid{}, binary()}, %% jid_bot is {<jid>, <bot_name>}
+	password :: binary(),
+	nick :: binary(),
+	type = tg :: atom()}).
+-record(ebridgebot_muc, {
+	group,
+	muc_room :: binary(),
+	bot_name :: binary()}).
