@@ -26,11 +26,17 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
-    ebridgebot:setup(),
+%%    ebridgebot:setup(),
     SupFlags = #{strategy => one_for_all,
-                 intensity => 0,
-                 period => 1},
-    ChildSpecs = [],
+        intensity => 0,
+        period => 1},
+    ChildSpecs = [
+        #{id => ebridgebot,
+            start => {ebridgebot, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker}
+    ],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions
