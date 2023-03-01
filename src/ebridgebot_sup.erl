@@ -27,16 +27,19 @@ start_link() ->
 %%                  modules => modules()}   % optional
 init([]) ->
 %%    ebridgebot:setup(),
+    Bots = application:get_env(ebridgebot, bots, []),
+    Ids = [binary_to_atom(ComponentName) || {ComponentName, _} <- Bots],
     SupFlags = #{strategy => one_for_all,
         intensity => 0,
         period => 1},
+
     ChildSpecs = [
-        #{id => ebridgebot,
+        #{id => Id,
             start => {ebridgebot, start_link, []},
             restart => permanent,
             shutdown => 5000,
             type => worker}
-    ],
+    || Id <- Ids],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions
