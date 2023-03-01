@@ -22,7 +22,14 @@ init([]) ->
 			{disc_copies, [node()]}]),
 	{ok, []}.
 
+set_bot_info(Jid, Name, Password, Nick, Type) when is_binary(Jid), is_atom(Type) ->
+	set_bot_info({escalus_utils:get_username(Jid), escalus_utils:get_server(Jid)}, Name, Password, Nick, Type);
+set_bot_info({_, _} = US, Name, Password, Nick, Type) ->
+	gen_server:call(?MODULE, #ebridgebot_xmpp{jid_bot = {US, Name}, password = Password, nick = Nick, type = Type}).
+
 % Handle call messages
+handle_call(#ebridgebot_xmpp{} = BotData, _From, State) ->
+	{reply, mnesia:dirty_write(BotData), State};
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
 
