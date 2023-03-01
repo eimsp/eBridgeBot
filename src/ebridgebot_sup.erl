@@ -11,6 +11,8 @@
 
 -export([init/1]).
 
+-include("ebridgebot.hrl").
+
 -define(SERVER, ?MODULE).
 
 start_link() ->
@@ -26,6 +28,11 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
+    application:start(mnesia),
+    mnesia:create_table(ebridgebot_muc,
+        [{attributes, record_info(fields, ebridgebot_muc)},
+            {disc_copies, [node()]}]),
+
     SupFlags = #{strategy => one_for_all,
         intensity => 0,
         period => 1},
