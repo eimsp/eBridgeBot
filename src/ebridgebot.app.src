@@ -7,7 +7,14 @@
    [kernel,
     stdlib
    ]},
-  {env,[]},
+  {env,
+   [{bots,
+    [{name, <<"ebridge_bot">>},
+     {component, <<"tg.localhost">>},
+     {nick, <<"tg_bot">>},
+     {password, <<"secret">>},
+     {port, 8888},
+     {token, <<"6066841531:AAEK0aUdaP6eoJWcS0020VOyYQpNhhMpBPE">>}]}]},
   {modules, []},
 
   {licenses, ["Apache 2.0"]},
