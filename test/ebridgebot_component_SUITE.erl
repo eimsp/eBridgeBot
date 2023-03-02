@@ -6,6 +6,7 @@
 -include_lib("escalus/include/escalus_xmlns.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("exml/include/exml.hrl").
+-include_lib("xmpp/include/xmpp_codec.hrl").
 
 all() ->
 	[{group, main}].
@@ -30,8 +31,8 @@ init_per_testcase(test_msg, Config) ->
 	escalus:init_per_testcase(test_msg, Config);
 init_per_testcase(CaseName, Config) ->
 	Config2 = escalus:init_per_testcase(CaseName, Config),
-	[_Host, RoomHost, Rooms, Users] =
-		[escalus_ct:get_config(K) || K <- [ejabberd_domain, room_host, deribit_rooms, escalus_users]],
+	[_Host, MucHost, Rooms, Users] =
+		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms, escalus_users]],
 	[begin
 		 Node = proplists:get_value(username, UserData),
 		 Server = proplists:get_value(server, UserData),
@@ -39,13 +40,15 @@ init_per_testcase(CaseName, Config) ->
 	 end || {_, UserData} <- Users],
 	[begin
 		 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
-		 catch mod_muc_admin:destroy_room(Room, RoomHost),
-		 ok = mod_muc:create_room(RoomHost, Room, RoomOpts), %% TODO add affiliations in room options
+		 catch mod_muc_admin:destroy_room(Room, MucHost),
+		 ok = mod_muc:create_room(MucHost, Room, RoomOpts), %% TODO add affiliations in room options
 		 timer:sleep(100),
+		 ComponentJid = get_property(component, Config),
+%%		 ok = mod_muc_admin:set_room_affiliation(Room, MucHost, ComponentJid, <<"admin">>),
 		 [begin
 			  UserCfg = proplists:get_value(U, Users),
 			  Jid = jid:to_string(list_to_tuple([proplists:get_value(K, UserCfg) || K <- [username, server]] ++ [<<>>])),
-			  ok = mod_muc_admin:set_room_affiliation(Room, RoomHost, Jid, atom_to_binary(Aff))
+			  ok = mod_muc_admin:set_room_affiliation(Room, MucHost, Jid, atom_to_binary(Aff))
 		  end || {U, Aff} <- Affs]
 	 end || {_, Opts} <- Rooms],
 	Config2.
@@ -58,17 +61,18 @@ end_per_testcase(CaseName, Config) ->
 	escalus:end_per_testcase(CaseName, Config).
 
 room_component_story(Config) ->
-	RoomJid = <<"deribit_test@conference.localhost">>,
-	[AliceNick] = [escalus_config:get_ct({escalus_users, U, nick}) || U <- [alice]],
+	RoomNode = escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, name}),
+	MucHost = escalus_config:get_ct(muc_host),
+	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
-			ComponentJid = get_property(component, Config),
-			CompNick = get_property(component, Config),
-			Pid = get_property(component_pid, Config),
+			[ComponentJid, ComponentNick, Pid] = [get_property(K, Config) || K <- [component, nick, component_pid]],
 			enter_room(Alice, RoomJid, AliceNick),
-			escalus_component:send(Pid, enter_groupchat(ComponentJid, <<"deribit_test@conference.localhost">>, CompNick)),
-%%			escalus:send(Client, enter_groupchat(Client, RoomJid, Nick)),
-			escalus_client:wait_for_stanzas(Alice, 2),
+			escalus_client:wait_for_stanzas(Alice, 1),
+			escalus_component:send(Pid, enter_groupchat(ComponentJid, RoomJid, ComponentNick)),
+			MucComponentJID = jid:make(RoomNode, MucHost, ComponentNick),
+			#presence{from = MucComponentJID} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 			ok
 		end).
 
