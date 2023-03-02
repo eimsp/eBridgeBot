@@ -31,6 +31,7 @@ init([]) ->
     application:start(mnesia),
     mnesia:create_table(ebridgebot_muc,
         [{attributes, record_info(fields, ebridgebot_muc)},
+            {index, [muc_jid, bot_name]},
             {disc_copies, [node()]}]),
 
     SupFlags = #{strategy => one_for_all,
