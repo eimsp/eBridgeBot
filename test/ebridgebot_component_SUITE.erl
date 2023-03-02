@@ -3,12 +3,16 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("escalus/include/escalus.hrl").
+-include_lib("escalus/include/escalus_xmlns.hrl").
+-include_lib("common_test/include/ct.hrl").
+-include_lib("exml/include/exml.hrl").
 
 all() ->
 	[{group, main}].
 
 groups() ->
-	[{main, [sequence], [test_msg]}, {local, [sequence], [test_msg]}].
+	MainStories = [test_msg, room_component_story],
+	[{main, [sequence], MainStories}, {local, [sequence], MainStories}].
 
 init_per_suite(Config) ->
 	[escalus:Fun([{escalus_user_db, {module, escalus_ejabberd}} | Config], escalus_users:get_users([alice])) || Fun <- [delete_users, create_users]],
@@ -25,7 +29,27 @@ init_per_testcase(test_msg, Config) ->
 	meck:expect(ebridgebot_component, process_stanza, fun process_stanza/3),
 	escalus:init_per_testcase(test_msg, Config);
 init_per_testcase(CaseName, Config) ->
-	escalus:init_per_testcase(CaseName, Config).
+	Config2 = escalus:init_per_testcase(CaseName, Config),
+	[_Host, RoomHost, Rooms, Users] =
+		[escalus_ct:get_config(K) || K <- [ejabberd_domain, room_host, deribit_rooms, escalus_users]],
+	[begin
+		 Node = proplists:get_value(username, UserData),
+		 Server = proplists:get_value(server, UserData),
+		 mnesia:dirty_delete(deribit_storage, {Node, Server})
+	 end || {_, UserData} <- Users],
+	[begin
+		 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
+		 catch mod_muc_admin:destroy_room(Room, RoomHost),
+		 ok = mod_muc:create_room(RoomHost, Room, RoomOpts), %% TODO add affiliations in room options
+		 timer:sleep(100),
+		 [begin
+			  UserCfg = proplists:get_value(U, Users),
+			  Jid = jid:to_string(list_to_tuple([proplists:get_value(K, UserCfg) || K <- [username, server]] ++ [<<>>])),
+			  ok = mod_muc_admin:set_room_affiliation(Room, RoomHost, Jid, atom_to_binary(Aff))
+		  end || {U, Aff} <- Affs]
+	 end || {_, Opts} <- Rooms],
+	Config2.
+
 
 end_per_testcase(test_msg, Config) ->
 	meck:unload(ebridgebot_component),
@@ -33,7 +57,20 @@ end_per_testcase(test_msg, Config) ->
 end_per_testcase(CaseName, Config) ->
 	escalus:end_per_testcase(CaseName, Config).
 
-
+room_component_story(Config) ->
+	RoomJid = <<"deribit_test@conference.localhost">>,
+	[AliceNick] = [escalus_config:get_ct({escalus_users, U, nick}) || U <- [alice]],
+	escalus:story(Config, [{alice, 1}],
+		fun(#client{jid = _AliceJid} = Alice) ->
+			ComponentJid = get_property(component, Config),
+			CompNick = get_property(component, Config),
+			Pid = get_property(component_pid, Config),
+			enter_room(Alice, RoomJid, AliceNick),
+			escalus_component:send(Pid, enter_groupchat(ComponentJid, <<"deribit_test@conference.localhost">>, CompNick)),
+%%			escalus:send(Client, enter_groupchat(Client, RoomJid, Nick)),
+			escalus_client:wait_for_stanzas(Alice, 2),
+			ok
+		end).
 
 test_msg(Config) ->
 	escalus:story(Config, [{alice, 1}],
@@ -51,6 +88,9 @@ test_msg(Config) ->
 			ok
 		end).
 
+
+
+%% test API
 get_property(PropName, Proplist) ->
 	case lists:keyfind(PropName, 1, Proplist) of
 		{PropName, Value} ->
@@ -59,6 +99,16 @@ get_property(PropName, Proplist) ->
 			throw({missing_property, PropName})
 	end.
 
+enter_room(Client, RoomJid, Nick) ->
+	escalus:send(Client, enter_groupchat(Client, RoomJid, Nick)),
+	escalus_client:wait_for_stanzas(Client, 2). %% Client wait for 2 presences from ChatRoom
+
+enter_groupchat(#client{jid = FromJid}, RoomJid, Nick) ->
+	enter_groupchat(FromJid, RoomJid, Nick);
+enter_groupchat(FromJid, RoomJid, Nick) ->
+	#xmlel{name = <<"presence">>,
+		attrs = [{<<"from">>, FromJid}, {<<"to">>, <<RoomJid/binary, "/", Nick/binary>>}],
+		children = [#xmlel{name = <<"x">>, attrs = [{<<"xmlns">>, ?NS_MUC}]}]}.
 %%%-------------------------------------------------------------------
 %%% meck functions
 %%%-------------------------------------------------------------------
