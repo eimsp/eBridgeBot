@@ -33,18 +33,18 @@ init([]) ->
         [{attributes, record_info(fields, ebridgebot_muc)},
             {index, [muc_jid, bot_name]},
             {disc_copies, [node()]}]),
-
-    SupFlags = #{strategy => one_for_all,
-        intensity => 0,
-        period => 1},
+    SupFlags = #{strategy => one_for_one,
+        intensity => 1000,
+        period => 3600},
 
     Bots = application:get_env(ebridgebot, bots, []),
     ChildSpecs = [
         #{id => BotId,
             start => {escalus_component, start_link, [ebridgebot_component, Args, Args]},
             restart => permanent,
-            shutdown => 5000,
-            type => worker}
+            shutdown => 2000,
+            type => worker,
+            modules => [escalus_component]}
         || {BotId, Args} <- Bots],
     {ok, {SupFlags, ChildSpecs}}.
 
