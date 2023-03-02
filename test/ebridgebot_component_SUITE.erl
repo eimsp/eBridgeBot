@@ -17,7 +17,7 @@ groups() ->
 
 init_per_suite(Config) ->
 	[escalus:Fun([{escalus_user_db, {module, escalus_ejabberd}} | Config], escalus_users:get_users([alice])) || Fun <- [delete_users, create_users]],
-	[{BotName, Pid, _, [escalus_component]} | _] = supervisor:which_children(ebridgebot_sup),
+	[{BotName, Pid, _, [escalus_component]} | _] = supervisor:which_children(ebridgebot_sup), %% get bot pid and name
 	Bots = application:get_env(ebridgebot, bots, []),
 	ConnectionArgs = get_property(BotName, Bots),
 	ConnectionArgs ++ [{component_pid, Pid}, {bot_name, BotName} | escalus:init_per_suite(Config)].
@@ -73,6 +73,10 @@ room_component_story(Config) ->
 			escalus_component:send(Pid, enter_groupchat(ComponentJid, RoomJid, ComponentNick)),
 			MucComponentJID = jid:make(RoomNode, MucHost, ComponentNick),
 			#presence{from = MucComponentJID} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+			ComponentResp = <<"Hi, Alice!">>,
+			Msg = #message{} =  xmpp:decode(escalus_stanza:groupchat_to(RoomJid, ComponentResp)),
+			escalus_component:send(Pid, xmpp:encode(Msg#message{from = jid:make(<<>>, ComponentJid, <<>>)})),
+			escalus:assert(is_groupchat_message, [ComponentResp], escalus:wait_for_stanza(Alice)),
 			ok
 		end).
 
@@ -113,10 +117,18 @@ enter_groupchat(FromJid, RoomJid, Nick) ->
 	#xmlel{name = <<"presence">>,
 		attrs = [{<<"from">>, FromJid}, {<<"to">>, <<RoomJid/binary, "/", Nick/binary>>}],
 		children = [#xmlel{name = <<"x">>, attrs = [{<<"xmlns">>, ?NS_MUC}]}]}.
+
 %%%-------------------------------------------------------------------
 %%% meck functions
 %%%-------------------------------------------------------------------
 process_stanza(Stanza, Client, State) ->
+	[From, To] = [exml_query:attr(Stanza, X) || X <- [<<"from">>, <<"to">>]],
+	Text = exml_query:path(Stanza, [{element, <<"body">>}, cdata]),
+	EchoMsg = escalus_stanza:chat(To, From, Text),
+	escalus:send(Client, EchoMsg),
+	{ok, State}.
+
+process_stanza_response(Stanza, Client, State) ->
 	[From, To] = [exml_query:attr(Stanza, X) || X <- [<<"from">>, <<"to">>]],
 	Text = exml_query:path(Stanza, [{element, <<"body">>}, cdata]),
 	EchoMsg = escalus_stanza:chat(To, From, Text),
