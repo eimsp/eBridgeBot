@@ -1,5 +1,7 @@
 -module(ebridgebot_component).
--export([init/1, handle_info/3, process_stanza/3, terminate/2]).
+-export([init/1,
+	handle_info/3,
+	process_stanza/3, terminate/2]).
 
 init(Args) ->
 	ct:print("!!init(~p)", [Args]),
