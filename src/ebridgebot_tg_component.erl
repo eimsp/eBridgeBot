@@ -6,6 +6,7 @@
 	component = [] :: binary(),
 	nick = [] :: binary(),
 	token = [] :: binary(),
+	rooms = [] :: list(),
 	context = [] :: any()}).
 
 init(Args) ->
@@ -17,11 +18,17 @@ init(Args) ->
 	pe4kin_receiver:start_http_poll(BotName, #{limit=>100, timeout=>60}),
 	{ok, #tg_state{name = BotName, component = Component, nick = Nick, token = Token}}.
 
-%% Function that handles information message Info received
-%% from the Client in the state State
+%% Function that handles information message received from the group chat of Telegram
+handle_info({pe4kin_update, BotName,
+		#{<<"message">> := #{<<"chat">> := #{<<"id">> := _Id, <<"type">> := <<"group">>}}} = TgMsg},
+			_Client, #tg_state{name = BotName} = State) ->
+	ct:print("tg msg: ~p", [TgMsg]),
+	{ok, State};
+handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
+%%	ct:print("!!handle_info(~p, ~p, ~p)", [Info, Client, State]),
+	NewRooms = lists:merge([{TgRoomId, MucJid}], Rooms),
+	{ok, State#tg_state{rooms = NewRooms}};
 handle_info(Info, Client, State) ->
-	%% Here you can implement the handling of the information message
-	%% and change the State accordingly
 	ct:print("!!handle_info(~p, ~p, ~p)", [Info, Client, State]),
 	{ok, State}.
 
