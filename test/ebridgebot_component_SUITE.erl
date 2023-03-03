@@ -74,26 +74,16 @@ room_component_story(Config) ->
 			ok = escalus_component:send(Pid, enter_groupchat(ComponentJid, RoomJid, ComponentNick)),
 			MucComponentJID = jid:make(RoomNode, MucHost, ComponentNick),
 			#presence{from = MucComponentJID} = xmpp:decode(escalus:wait_for_stanza(Alice)),
-%%			ComponentResp = <<"Hi, Alice!">>,
-%%			Msg = #message{} =  xmpp:decode(escalus_stanza:groupchat_to(RoomJid, ComponentResp)),
-%%			escalus_component:send(Pid, xmpp:encode(Msg#message{from = jid:make(<<>>, ComponentJid, <<>>)})),
-%%			escalus:assert(is_groupchat_message, [ComponentResp], escalus:wait_for_stanza(Alice)),
-			meck:new(ebridgebot_component),
-			meck:expect(ebridgebot_component, process_stanza, fun process_stanza_response/3),
 			ComponentResp = <<"Hi, Alice!">>,
 			Msg = #message{} =  xmpp:decode(escalus_stanza:groupchat_to(RoomJid, ComponentResp)),
 			escalus_component:send(Pid, xmpp:encode(Msg#message{from = jid:make(<<>>, ComponentJid, <<>>)})),
 			escalus:assert(is_groupchat_message, [ComponentResp], escalus:wait_for_stanza(Alice)),
-%%			meck:new(ebridgebot_component),
-%%			meck:expect(ebridgebot_component, process_stanza, fun process_stanza_response/3),
+			meck:new(ebridgebot_component),
+			meck:expect(ebridgebot_component, process_stanza, fun process_stanza_response/3),
 			AliceMsg = <<"Hi, bot!">>,
-%%			timer:sleep(5000),
 			escalus:send(Alice, escalus_stanza:groupchat_to(RoomJid, AliceMsg)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
-			T1 = erlang:system_time(millisecond),
 			escalus:assert(is_groupchat_message, [<<"Response from bot">>], escalus:wait_for_stanza(Alice, 10000)),
-			ct:pal("!$%~p", [erlang:system_time(millisecond) - T1]),
-%%			escalus:wait_for_stanzas(Alice, 2),
 			ok
 		end).
 
@@ -145,22 +135,8 @@ process_stanza(Stanza, Client, State) ->
 	{ok, State}.
 
 process_stanza_response(#message{type = groupchat, from = From, to = To, body = [#text{data = <<"Hi, bot!">>}]} = Pkt, Client, State) ->
-%%	Pid = self(),
-
-%%	{ok, Pid} = mod_muc:unhibernate_room(<<"localhost">>, <<"conference.localhost">>, <<"ebridgebot.test">>),
-	ct:pal("!!process_stanza_response before:~p", [Pkt]),
-%%	escalus:send(Client, escalus_stanza:groupchat_to(<<"ebridgebot.test@conference.localhost">>, <<"Response from bot">>)),
-%%	escalus:send(Client, escalus_stanza:groupchat_to(jid:to_string(jid:remove_resource(From)), <<"Response from bot">>)),
-%%	escalus:wait_for_stanza(Client),
-%%	spawn(fun() ->
 	escalus_connection:send(Client, xmpp:encode(Pkt#message{id = deribit:gen_uuid(), from = jid:remove_resource(To), to = jid:remove_resource(From),
 		body = [#text{data = <<"Response from bot">>}], sub_els = []})),
-	ct:pal("!!process_stanza_response after:", []),
-%%	escalus:wait_for_stanza(Client),
-%%	      end),
-%%	escalus_connection:send(Client, xmpp:encode(Pkt#message{id = deribit:gen_uuid(), from = jid:remove_resource(To), to = jid:remove_resource(From),
-%%		body = [#text{data = <<"Response from bot">>}], sub_els = []})),
-%%	spawn(fun() -> escalus_component:send(Pid, xmpp:encode(Pkt#message{from = jid:remove_resource(To), to = jid:remove_resource(From), body = [#text{data = <<"Response from bot">>}]})) end),
 	{ok, State};
 process_stanza_response(#xmlel{} = Stanza, Client, State) ->
 	process_stanza_response(xmpp:decode(Stanza), Client, State);
