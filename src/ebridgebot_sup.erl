@@ -40,7 +40,7 @@ init([]) ->
     Bots = application:get_env(ebridgebot, bots, []),
     ChildSpecs = [
         #{id => BotId,
-            start => {escalus_component, start_link, [ebridgebot_component, Args, Args]},
+            start => {escalus_component, start_link, [proplists:get_value(module, Args, ebridgebot_tg_component), Args, Args]},
             restart => permanent,
             shutdown => 2000,
             type => worker,

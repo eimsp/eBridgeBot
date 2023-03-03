@@ -26,8 +26,8 @@ end_per_suite(Config) ->
 	escalus:end_per_suite(Config).
 
 init_per_testcase(test_msg, Config) ->
-	meck:new(ebridgebot_component),
-	meck:expect(ebridgebot_component, process_stanza, fun process_stanza/3),
+	meck:new(ebridgebot_tg_component),
+	meck:expect(ebridgebot_tg_component, process_stanza, fun process_stanza/3),
 	escalus:init_per_testcase(test_msg, Config);
 init_per_testcase(CaseName, Config) ->
 	Config2 = escalus:init_per_testcase(CaseName, Config),
@@ -55,10 +55,10 @@ init_per_testcase(CaseName, Config) ->
 
 
 end_per_testcase(test_msg, Config) ->
-	meck:unload(ebridgebot_component),
+	meck:unload(ebridgebot_tg_component),
 	escalus:end_per_testcase(test_msg, Config);
 end_per_testcase(CaseName, Config) ->
-	catch meck:unload(ebridgebot_component),
+	catch meck:unload(ebridgebot_tg_component),
 	escalus:end_per_testcase(CaseName, Config).
 
 room_component_story(Config) ->
@@ -78,8 +78,8 @@ room_component_story(Config) ->
 			Msg = #message{} =  xmpp:decode(escalus_stanza:groupchat_to(RoomJid, ComponentResp)),
 			escalus_component:send(Pid, xmpp:encode(Msg#message{from = jid:make(<<>>, ComponentJid, <<>>)})),
 			escalus:assert(is_groupchat_message, [ComponentResp], escalus:wait_for_stanza(Alice)),
-			meck:new(ebridgebot_component),
-			meck:expect(ebridgebot_component, process_stanza, fun process_stanza_response/3),
+			meck:new(ebridgebot_tg_component),
+			meck:expect(ebridgebot_tg_component, process_stanza, fun process_stanza_response/3),
 			AliceMsg = <<"Hi, bot!">>,
 			escalus:send(Alice, escalus_stanza:groupchat_to(RoomJid, AliceMsg)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),

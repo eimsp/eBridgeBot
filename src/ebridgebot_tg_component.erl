@@ -1,10 +1,8 @@
--module(ebridgebot_component).
--export([init/1,
-	handle_info/3,
-	process_stanza/3, terminate/2]).
+-module(ebridgebot_tg_component).
+-export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
 init(Args) ->
-	ct:print("!!init(~p)", [Args]),
+%%	ct:print("!!init(~p)", [Args]),
 	{ok, []}.
 
 %% Function that handles information message Info received
