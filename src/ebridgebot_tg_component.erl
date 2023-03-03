@@ -1,9 +1,21 @@
 -module(ebridgebot_tg_component).
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
+-record(tg_state, {
+	name = [] :: binary(),
+	component = [] :: binary(),
+	nick = [] :: binary(),
+	token = [] :: binary(),
+	context = [] :: any()}).
+
 init(Args) ->
-%%	ct:print("!!init(~p)", [Args]),
-	{ok, []}.
+	application:ensure_all_started(pe4kin),
+	[BotName, BotToken, Component, Nick, Token] = [proplists:get_value(K, Args) ||
+		K <- [name, token, component, nick, token]], %% TODO unused params to remove in future
+	pe4kin:launch_bot(BotName, BotToken, #{receiver => true}),
+	pe4kin_receiver:subscribe(BotName, self()),
+	pe4kin_receiver:start_http_poll(BotName, #{limit=>100, timeout=>60}),
+	{ok, #tg_state{name = BotName, component = Component, nick = Nick, token = Token}}.
 
 %% Function that handles information message Info received
 %% from the Client in the state State
