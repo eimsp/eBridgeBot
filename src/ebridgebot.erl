@@ -3,8 +3,15 @@
 
 -include("ebridgebot.hrl").
 
-link_room(GroupId, MucJid, BotName) ->
-	mnesia:dirty_write(#ebridgebot_muc{group_id = GroupId, muc_jid = MucJid, bot_name = BotName}).
+link_room(GroupId, MucJid, Name) ->
+	[{BotId, Pid, _, [escalus_component]} | _] = supervisor:which_children(ebridgebot_sup).
+%%	mnesia:dirty_write(#ebridgebot_muc{group_id = GroupId, muc_jid = MucJid, bot_name = BotName}).
+%%link_room(GroupId, MucJid, BotName) ->
+%%	mnesia:dirty_write(#ebridgebot_muc{group_id = GroupId, muc_jid = MucJid, bot_name = BotName}).
+get_bot_name_by_id(BotId) ->
+	Bots = application:get_env(?MODULE, bots, []),
+	deep_search([BotId, name], Bots).
+
 
 run_test() ->
 	run_test(ebridgebot_component_SUITE, []).
@@ -23,4 +30,14 @@ run_test(Suite, Testcases) when is_atom(Suite) ->
 					{dir, filename:join(DeribitPath, "test")},
 					{include, ["_build/dev/lib/escalus", "include"]},
 					{config, filename:join(DeribitPath, "test/test.config")}])
+	end.
+
+deep_search(Path, List) ->
+	deep_search(Path, 1, List).
+deep_search([], _N, List) -> List;
+deep_search([Key | Tail], _N, [Tuple | _] = List) when is_tuple(Tuple) ->
+	case lists:keyfind(Key, 1, List) of
+		{_, [_ | _] = Value} when Tail /= [] -> deep_search(Tail, Value);
+		{_, Value} -> Value;
+		_ -> []
 	end.
