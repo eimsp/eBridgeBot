@@ -3,11 +3,9 @@
 
 -include("ebridgebot.hrl").
 
-link_room(GroupId, MucJid, Name) ->
-	[{BotId, Pid, _, [escalus_component]} | _] = supervisor:which_children(ebridgebot_sup).
-%%	mnesia:dirty_write(#ebridgebot_muc{group_id = GroupId, muc_jid = MucJid, bot_name = BotName}).
-%%link_room(GroupId, MucJid, BotName) ->
-%%	mnesia:dirty_write(#ebridgebot_muc{group_id = GroupId, muc_jid = MucJid, bot_name = BotName}).
+link_room(BotId, TgGroupId, MucJid) ->
+	Pid = ebridgebot_tg_component:get_pid(BotId),
+	Pid ! {link_rooms, TgGroupId, MucJid}.
 get_bot_name_by_id(BotId) ->
 	Bots = application:get_env(?MODULE, bots, []),
 	deep_search([BotId, name], Bots).
@@ -37,7 +35,8 @@ deep_search(Path, List) ->
 deep_search([], _N, List) -> List;
 deep_search([Key | Tail], N, [Tuple | _] = List) when is_tuple(Tuple) ->
 	case lists:keyfind(Key, N, List) of
-		{_, [_ | _] = Value} when Tail /= [] -> deep_search(Tail, Value);
+		{_, [_ | _] = Value} when Tail /= [] ->
+			deep_search(Tail, Value);
 		{_, Value} -> Value;
 		_ -> []
 	end.
