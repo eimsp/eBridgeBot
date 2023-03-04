@@ -17,10 +17,10 @@ groups() ->
 
 init_per_suite(Config) ->
 	[escalus:Fun([{escalus_user_db, {module, escalus_ejabberd}} | Config], escalus_users:get_users([alice])) || Fun <- [delete_users, create_users]],
-	[{BotName, Pid, _, [escalus_component]} | _] = supervisor:which_children(ebridgebot_sup), %% get bot pid and name
+	[{BotId, Pid, _, [escalus_component]} | _] = supervisor:which_children(ebridgebot_sup), %% get bot pid and name
 	Bots = application:get_env(ebridgebot, bots, []),
-	ConnectionArgs = get_property(BotName, Bots),
-	ConnectionArgs ++ [{component_pid, Pid}, {bot_name, BotName} | escalus:init_per_suite(Config)].
+	ConnectionArgs = get_property(BotId, Bots),
+	ConnectionArgs ++ [{component_pid, Pid}, {bot_id, BotId} | escalus:init_per_suite(Config)].
 
 end_per_suite(Config) ->
 	escalus:end_per_suite(Config).
@@ -66,12 +66,13 @@ room_component_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
+	BotId = get_property(bot_id, Config),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			[ComponentJid, ComponentNick, Pid] = [get_property(K, Config) || K <- [component, nick, component_pid]],
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 1),
-			ok = escalus_component:send(Pid, enter_groupchat(ComponentJid, RoomJid, ComponentNick)),
+			ebridgebot_tg_component:enter_groupchat(BotId, RoomJid),
 			MucComponentJID = jid:make(RoomNode, MucHost, ComponentNick),
 			#presence{from = MucComponentJID} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 			ComponentResp = <<"Hi, Alice!">>,
