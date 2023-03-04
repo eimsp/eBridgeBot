@@ -35,8 +35,8 @@ run_test(Suite, Testcases) when is_atom(Suite) ->
 deep_search(Path, List) ->
 	deep_search(Path, 1, List).
 deep_search([], _N, List) -> List;
-deep_search([Key | Tail], _N, [Tuple | _] = List) when is_tuple(Tuple) ->
-	case lists:keyfind(Key, 1, List) of
+deep_search([Key | Tail], N, [Tuple | _] = List) when is_tuple(Tuple) ->
+	case lists:keyfind(Key, N, List) of
 		{_, [_ | _] = Value} when Tail /= [] -> deep_search(Tail, Value);
 		{_, Value} -> Value;
 		_ -> []
