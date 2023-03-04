@@ -26,13 +26,25 @@ init(Args) ->
 	pe4kin_receiver:subscribe(BotName, self()),
 	pe4kin_receiver:start_http_poll(BotName, #{limit=>100, timeout=>60}),
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
+	self() ! enter_linked_rooms, %% enter to all linked rooms
 	{ok, #tg_state{bot_id = BotId, bot_name = BotName, component = Component, nick = Nick, token = Token, rooms = NewRooms}}.
 
 %% Function that handles information message received from the group chat of Telegram
 handle_info({pe4kin_update, BotName,
-		#{<<"message">> := #{<<"chat">> := #{<<"id">> := _Id, <<"type">> := <<"group">>}}} = TgMsg},
-			_Client, #tg_state{bot_name = BotName} = State) ->
+	#{<<"message">> :=
+		#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := Id},
+		  <<"from">> := #{<<"username">> := TgUserName},
+		  <<"text">> := Text}}},
+	Client, #tg_state{bot_name = BotName, rooms = Rooms, component = Component} = State) ->
+	[escalus:send(Client, xmpp:encode(#message{type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
+		body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}]}))
+	  || #muc_state{group_id = TgId, muc_jid = MucJid} <- Rooms, Id == TgId],
+	{ok, State};
+handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName, rooms = Rooms} = State) ->
 	ct:print("tg msg: ~p", [TgMsg]),
+	{ok, State};
+handle_info({pe4kin_send, ChatId, Text}, _Client, #tg_state{bot_name = BotName} = State) ->
+	pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
 	{ok, State};
 handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
@@ -50,12 +62,13 @@ handle_info(enter_linked_rooms, Client, #tg_state{rooms = Rooms} = State) ->
 	NewRooms =
 		lists:foldr(
 			fun(#muc_state{muc_jid = MucJid, state = out} = MucState, Acc) ->
-				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
-					#muc_state{} -> ok;
-					false -> handle_info({enter_groupchat, MucJid}, Client, State)
-				end,
-				[MucState#muc_state{state = pending} | Acc];
-				(MucState, Acc) -> [MucState | Acc]
+					case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
+						#muc_state{} -> ok;
+						false -> handle_info({enter_groupchat, MucJid}, Client, State)
+					end,
+					[MucState#muc_state{state = pending} | Acc];
+				(MucState, Acc) ->
+					[MucState | Acc]
 			end, [], Rooms),
 	{ok, State#tg_state{rooms = NewRooms}};
 handle_info({state, Pid}, _Client, State) ->
@@ -69,7 +82,6 @@ process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
 process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} = Pkt,
 	_Client, #tg_state{rooms = Rooms, component = ComponentJid} = State) ->
-%%	ct:print("handle component presence: ~p", [Pkt]),
 	case {jid:encode(To), xmpp:get_subtag(Pkt, #muc_user{})} of
 		{ComponentJid, #muc_user{items = [#muc_item{jid = To}]}} ->
 			CurMucJid = jid:encode(jid:remove_resource(CurMucJID)),
@@ -83,6 +95,12 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 			{ok, State#tg_state{rooms = NewRooms}};
 		_ -> {ok, State}
 	end;
+process_stanza(#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt, _Client,
+		#tg_state{bot_name = BotName, rooms = Rooms} = State) ->
+	MucFrom = jid:encode(jid:remove_resource(From)),
+	[pe4kin:send_message(BotName, #{chat_id => TgId, text => <<Nick/binary, ":\n", Text/binary>>})
+		|| #muc_state{muc_jid = MucJid, group_id = TgId} <- Rooms, MucFrom == MucJid],
+	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
@@ -90,7 +108,7 @@ process_stanza(Stanza, _Client, State) ->
 	{ok, State}.
 
 terminate(Reason, State) ->
-	ct:print("!#!terminate/2 ~p", [{Reason, State}]),
+	ct:print("terminate/2 ~p", [{Reason, State}]),
 	component_stopped.
 
 -spec stop(atom()) -> 'ok'.
@@ -116,3 +134,6 @@ enter_groupchat(BotId, MucJid) ->
 
 enter_linked_rooms(BotId) ->
 	pid(BotId) ! enter_linked_rooms.
+
+send(BotId, ChatId, Text) ->
+	pid(BotId) ! {pe4kin_send, ChatId, Text}.
