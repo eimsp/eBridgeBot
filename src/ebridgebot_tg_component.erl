@@ -15,6 +15,8 @@
 	rooms = [] :: list(),
 	context = [] :: any()}).
 
+-record(muc_state, {group_id = [] :: integer(), muc_jid = [] :: binary(), state = out :: out | in | pending}).
+
 init(Args) ->
 	application:ensure_all_started(pe4kin),
 	[BotId, BotName, BotToken, Component, Nick, Token] = [proplists:get_value(K, Args) ||
@@ -31,17 +33,22 @@ handle_info({pe4kin_update, BotName,
 	ct:print("tg msg: ~p", [TgMsg]),
 	{ok, State};
 handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
-	NewRooms = lists:umerge([{TgRoomId, MucJid}], Rooms),
+	LMucJid = string:lowercase(MucJid),
+	NewRooms =
+		case [exist || #muc_state{group_id = GId, muc_jid = J} <- Rooms, TgRoomId == GId, LMucJid == J] of
+			[] -> [#muc_state{group_id = TgRoomId, muc_jid = LMucJid} | Rooms];
+			_ -> Rooms
+		end,
 	{ok, State#tg_state{rooms = NewRooms}};
 handle_info({enter_groupchat, MucJid}, Client, #tg_state{component = Component, nick = Nick} = State) when is_binary(MucJid) ->
-	Presence = #presence{from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick), sub_els = [#muc{}]},
-	escalus:send(Client, xmpp:encode(Presence)),
+	EnterPresence = #presence{from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick), sub_els = [#muc{}]},
+	escalus:send(Client, xmpp:encode(EnterPresence)),
 	{ok, State};
 handle_info({state, Pid}, _Client, State) ->
 	Pid ! {state, State},
 	{ok, State};
-handle_info(Info, Client, State) ->
-	ct:print("!!handle_info(~p, ~p, ~p)", [Info, Client, State]),
+handle_info(Info, _Client, State) ->
+	ct:print("handle component: ~p", [Info]),
 	{ok, State}.
 
 %% Function that processes the Stanza from the Client with the
@@ -49,7 +56,7 @@ handle_info(Info, Client, State) ->
 process_stanza(Stanza, Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
-	ct:print("!@!process_stanza(~p, ~p, ~p)", [Stanza, Client, State]),
+	ct:print("handle component stanza: ~p", [Stanza]),
 	{ok, State}.
 
 terminate(Reason, State) ->
