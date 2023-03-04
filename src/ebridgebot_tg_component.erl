@@ -1,5 +1,8 @@
 -module(ebridgebot_tg_component).
 -compile(export_all).
+
+-include_lib("xmpp/include/xmpp.hrl").
+
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
 -record(tg_state, {
@@ -15,7 +18,7 @@
 init(Args) ->
 	application:ensure_all_started(pe4kin),
 	[BotId, BotName, BotToken, Component, Nick, Token] = [proplists:get_value(K, Args) ||
-		K <- [bot_id, name, token, component, nick, token]], %% TODO unused params to remove in future
+		K <- [bot_id, name, token, component, nick, token]], %% TODO unused params need remove in future
 	pe4kin:launch_bot(BotName, BotToken, #{receiver => true}),
 	pe4kin_receiver:subscribe(BotName, self()),
 	pe4kin_receiver:start_http_poll(BotName, #{limit=>100, timeout=>60}),
@@ -30,6 +33,10 @@ handle_info({pe4kin_update, BotName,
 handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
 	NewRooms = lists:umerge([{TgRoomId, MucJid}], Rooms),
 	{ok, State#tg_state{rooms = NewRooms}};
+handle_info({enter_groupchat, MucJid}, Client, #tg_state{component = Component, nick = Nick} = State) when is_binary(MucJid) ->
+	Presence = #presence{from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick), sub_els = [#muc{}]},
+	escalus:send(Client, xmpp:encode(Presence)),
+	{ok, State};
 handle_info({state, Pid}, _Client, State) ->
 	Pid ! {state, State},
 	{ok, State};
@@ -51,18 +58,21 @@ terminate(Reason, State) ->
 
 -spec stop(atom()) -> 'ok'.
 stop(BotId) ->
-	Pid = get_pid(BotId),
+	Pid = pid(BotId),
 	escalus_component:stop(Pid, <<"stopped">>).
 
-get_state(Pid) when is_pid(Pid) ->
+state(Pid) when is_pid(Pid) ->
 	Pid ! {state, self()},
 	receive {state, State} -> State after 1000 -> {error, timeout} end;
-get_state(BotId) ->
-	get_state(get_pid(BotId)).
+state(BotId) ->
+	state(pid(BotId)).
 
-get_pid(BotId) ->
+pid(BotId) ->
 	Children = supervisor:which_children(ebridgebot_sup),
 	case lists:keyfind(BotId, 1, Children) of
 		{_, Pid, _, _} -> Pid;
 		_ -> {error, bot_not_found}
 	end.
+
+enter_groupchat(BotId, MucJid) ->
+	pid(BotId) ! {enter_groupchat, MucJid}.

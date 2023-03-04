@@ -4,7 +4,7 @@
 -include("ebridgebot.hrl").
 
 link_room(BotId, TgGroupId, MucJid) ->
-	Pid = ebridgebot_tg_component:get_pid(BotId),
+	Pid = ebridgebot_tg_component:pid(BotId),
 	Pid ! {link_rooms, TgGroupId, MucJid}.
 get_bot_name_by_id(BotId) ->
 	Bots = application:get_env(?MODULE, bots, []),
