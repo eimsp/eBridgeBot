@@ -28,7 +28,7 @@ handle_info({pe4kin_update, BotName,
 	ct:print("tg msg: ~p", [TgMsg]),
 	{ok, State};
 handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
-	NewRooms = lists:merge([{TgRoomId, MucJid}], Rooms),
+	NewRooms = lists:umerge([{TgRoomId, MucJid}], Rooms),
 	{ok, State#tg_state{rooms = NewRooms}};
 handle_info({state, Pid}, _Client, State) ->
 	Pid ! {state, State},
@@ -48,6 +48,11 @@ process_stanza(Stanza, Client, State) ->
 terminate(Reason, State) ->
 	ct:print("!#!terminate/2 ~p", [{Reason, State}]),
 	component_stopped.
+
+-spec stop(atom()) -> 'ok'.
+stop(BotId) ->
+	Pid = get_pid(BotId),
+	escalus_component:stop(Pid, <<"stopped">>).
 
 get_state(Pid) when is_pid(Pid) ->
 	Pid ! {state, self()},
