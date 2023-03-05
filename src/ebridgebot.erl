@@ -10,6 +10,8 @@ get_bot_name_by_id(BotId) ->
 	Bots = application:get_env(?MODULE, bots, []),
 	deep_search([BotId, name], Bots).
 
+gen_uuid() ->
+	list_to_binary(uuid:uuid_to_string(uuid:get_v4())).
 
 run_test() ->
 	run_test(ebridgebot_component_SUITE, []).

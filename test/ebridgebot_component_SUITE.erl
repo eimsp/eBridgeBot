@@ -136,10 +136,10 @@ process_stanza(Stanza, Client, State) ->
 	{ok, State}.
 
 process_stanza_response(#message{type = groupchat, from = From, to = To, body = [#text{data = <<"Hi, bot!">>}]} = Pkt, Client, State) ->
-	escalus_connection:send(Client, xmpp:encode(Pkt#message{id = deribit:gen_uuid(), from = jid:remove_resource(To), to = jid:remove_resource(From),
+	escalus_connection:send(Client, xmpp:encode(Pkt#message{id = ebridgebot:gen_uuid(), from = jid:remove_resource(To), to = jid:remove_resource(From),
 		body = [#text{data = <<"Response from bot">>}], sub_els = []})),
 	{ok, State};
 process_stanza_response(#xmlel{} = Stanza, Client, State) ->
 	process_stanza_response(xmpp:decode(Stanza), Client, State);
-process_stanza_response(Stanza, Client, State) ->
+process_stanza_response(_Stanza, _Client, State) ->
 	{ok, State}.
