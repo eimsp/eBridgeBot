@@ -1,11 +1,12 @@
--include_lib("escalus/include/escalus.hrl").
+-record(tg_id, {
+	chat_id = [] :: neg_integer(),
+	id = [] :: integer()}).
 
-%%-record(ebridgebot_xmpp, {
-%%	jid_bot :: {{binary(), binary()}, binary()}, %% jid_bot is {<jid>, <bot_name>}
-%%	password :: binary(),
-%%	nick :: binary(),
-%%	type = tg :: atom()}).
--record(ebridgebot_muc, {
-	group_id,
-	muc_jid :: binary(),
-	bot_name :: binary()}).
+-record(xmpp_id, {
+	bot_id = [] :: atom(),
+	id = [] :: binary()}).
+
+-record(xmpp_link, {
+	xmpp_id = [] :: binary(),
+	uid = [] :: list(#tg_id{}) | list(),
+	time = erlang:system_time(microsecond) :: integer()}).

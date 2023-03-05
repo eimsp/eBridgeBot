@@ -29,10 +29,11 @@ start_link() ->
 %%                  modules => modules()}   % optional
 init([]) ->
     application:start(mnesia),
-    mnesia:create_table(ebridgebot_muc,
-        [{attributes, record_info(fields, ebridgebot_muc)},
-            {index, [muc_jid, bot_name]},
+    mnesia:create_table(xmpp_link,
+        [{attributes, record_info(fields, xmpp_link)},
+            {index, [uid]},
             {disc_copies, [node()]}]),
+
     SupFlags = #{strategy => one_for_one,
         intensity => 1000,
         period => 3600},
