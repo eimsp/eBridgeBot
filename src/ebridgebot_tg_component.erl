@@ -37,8 +37,8 @@ handle_info({pe4kin_update, BotName,
 		#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
 		  <<"from">> := #{<<"username">> := TgUserName},
 			<<"message_id">> := Id,
-		  <<"text">> := Text}}} = TgMsg,
-	Client, #tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
+		  <<"text">> := Text}}} = TgMsg, Client,
+	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
 	ct:print("tg msg groupchat: ~p", [TgMsg]),
 		[begin
 			 OriginId = ebridgebot:gen_uuid(),
@@ -47,11 +47,26 @@ handle_info({pe4kin_update, BotName,
 			 write_link(BotId, OriginId, ChatId, Id)
 		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms, CurChatId == ChatId andalso (S == in orelse S == subscribed)],
 	{ok, State};
+handle_info({pe4kin_update, BotName,
+	#{<<"edited_message">> :=
+	#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
+		<<"from">> := #{<<"username">> := TgUserName},
+		<<"message_id">> := Id,
+		<<"text">> := Text}}} = TgMsg, Client,
+	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
+	ct:print("edit tg msg groupchat: ~p", [TgMsg]),
+	[case get_replace_id(#tg_id{chat_id = ChatId, id = Id}, BotId) of
+		 [] -> ok;
+		 ReplaceId ->
+			 Pkt = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
+			 escalus:send(Client, xmpp:encode(Pkt))
+	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms, CurChatId == ChatId andalso (S == in orelse S == subscribed)],
+	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
 	ct:print("tg msg: ~p", [TgMsg]),
 	{ok, State};
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
-	ct:print("tg msg 2: ~p", [TgMsg]),
+	ct:print("tg msg2: ~p", [TgMsg]),
 	{ok, State};
 handle_info({pe4kin_send, ChatId, Text}, _Client, #tg_state{bot_name = BotName} = State) ->
 	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
@@ -183,6 +198,11 @@ sub_iq(From, To, Nick, Password) ->
 				?NS_MUCSUB_NODES_SUBJECT,
 				?NS_MUCSUB_NODES_CONFIG]}]}.
 
+edit_msg(From, To, Text, ReplaceId) ->
+	OriginId = ebridgebot:gen_uuid(),
+	#message{id = OriginId, type = groupchat, from = From, to = To, body = [#text{data = Text}],
+		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId}]}.
+
 subscribe_component(BotId, MucJid) ->
 	pid(BotId) ! {subscribe_component, MucJid}.
 
@@ -190,3 +210,16 @@ write_link(BotId, OriginId, ChatId, Id) ->
 	mnesia:dirty_write(
 		#xmpp_link{xmpp_id = #xmpp_id{bot_id = BotId, id = OriginId},
 			uid = #tg_id{id = Id, chat_id = ChatId}}).
+
+get_replace_id(#tg_id{} = TgId, BotId) ->
+	case mnesia:dirty_index_read(xmpp_link, TgId, #xmpp_link.uid) of
+		[#xmpp_link{xmpp_id = #xmpp_id{id = OriginId, bot_id = BotId}}] ->
+			OriginId;
+		[] -> []
+	end;
+get_replace_id(#xmpp_id{} = XmppId, ChatId) ->
+	case mnesia:dirty_read(XmppId) of
+		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}}] ->
+			Id;
+		[] -> []
+	end.
