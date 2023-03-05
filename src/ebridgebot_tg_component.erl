@@ -13,7 +13,6 @@
 	nick = [] :: binary(),
 	token = [] :: binary(),
 	rooms = [] :: list(),
-	ignored_ids = [] :: list(),
 	context = [] :: any()}).
 
 -record(muc_state, {group_id = [] :: integer(), muc_jid = [] :: binary(), state = out :: out | in | pending}).
@@ -37,15 +36,14 @@ handle_info({pe4kin_update, BotName,
 		#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := Id},
 		  <<"from">> := #{<<"username">> := TgUserName},
 		  <<"text">> := Text}}} = TgMsg,
-	Client, #tg_state{bot_name = BotName, rooms = Rooms, component = Component, ignored_ids = IgnoredIds} = State) ->
+	Client, #tg_state{bot_name = BotName, rooms = Rooms, component = Component} = State) ->
 	ct:print("tg msg groupchat: ~p", [TgMsg]),
-	Ids =
 		[begin
 			 Uuid = ebridgebot:gen_uuid(),
 			 escalus:send(Client, xmpp:encode(#message{id = Uuid, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
-				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = Uuid}]})), Uuid
+				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = Uuid}]}))
 		 end || #muc_state{group_id = TgId, muc_jid = MucJid, state = S} <- Rooms, Id == TgId andalso (S == in orelse S == subscribed)],
-	{ok, State#tg_state{ignored_ids = Ids ++ IgnoredIds}};
+	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
 	ct:print("tg msg: ~p", [TgMsg]),
 	{ok, State};
@@ -118,21 +116,13 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 			{ok, State#tg_state{rooms = NewRooms}};
 		_ -> {ok, State}
 	end;
-process_stanza(#message{id = Id, type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt, _Client,
-	#tg_state{bot_name = BotName, rooms = Rooms, ignored_ids = IgnoredIds} = State) ->
+process_stanza(#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt, _Client,
+	#tg_state{bot_name = BotName, rooms = Rooms, nick = ComponentNick} = State) when Nick /= ComponentNick ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
-	NewState =
-		case lists:delete(Id, IgnoredIds) of
-			IgnoredIds ->
-				ct:print("msg to tg: ~p", [Pkt]),
-				[pe4kin:send_message(BotName, #{chat_id => TgId, text => <<Nick/binary, ":\n", Text/binary>>})
-					|| #muc_state{muc_jid = MucJid, group_id = TgId} <- Rooms, MucFrom == MucJid],
-				State;
-			Ids ->
-				ct:print("ignored msg to tg: ~p", [Pkt]),
-				State#tg_state{ignored_ids = Ids}
-		end,
-	{ok, NewState};
+	ct:print("msg to tg: ~p", [Pkt]),
+	[pe4kin:send_message(BotName, #{chat_id => TgId, text => <<Nick/binary, ":\n", Text/binary>>})
+		|| #muc_state{muc_jid = MucJid, group_id = TgId} <- Rooms, MucFrom == MucJid],
+	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
