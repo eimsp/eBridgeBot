@@ -2,6 +2,7 @@
 -compile(export_all).
 
 -include_lib("xmpp/include/xmpp.hrl").
+-include("ebridgebot.hrl").
 
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
@@ -26,29 +27,35 @@ init(Args) ->
 	pe4kin_receiver:subscribe(BotName, self()),
 	pe4kin_receiver:start_http_poll(BotName, #{limit=>100, timeout=>60}),
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
-%%	self() ! sub_linked_rooms, %% subscribe to all linked rooms
+%%	self() ! sub_linked_rooms, %% subscribe to all linked rooms %% TODO to think about subscribe and structure of #muc_state.state
 	self() ! enter_linked_rooms, %% enter to all linked rooms
 	{ok, #tg_state{bot_id = BotId, bot_name = BotName, component = Component, nick = Nick, token = Token, rooms = NewRooms}}.
 
 %% Function that handles information message received from the group chat of Telegram
 handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
-		#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := Id},
+		#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
 		  <<"from">> := #{<<"username">> := TgUserName},
+			<<"message_id">> := Id,
 		  <<"text">> := Text}}} = TgMsg,
-	Client, #tg_state{bot_name = BotName, rooms = Rooms, component = Component} = State) ->
+	Client, #tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
 	ct:print("tg msg groupchat: ~p", [TgMsg]),
 		[begin
-			 Uuid = ebridgebot:gen_uuid(),
-			 escalus:send(Client, xmpp:encode(#message{id = Uuid, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
-				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = Uuid}]}))
-		 end || #muc_state{group_id = TgId, muc_jid = MucJid, state = S} <- Rooms, Id == TgId andalso (S == in orelse S == subscribed)],
+			 OriginId = ebridgebot:gen_uuid(),
+			 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
+				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
+			 write_link(BotId, OriginId, ChatId, Id)
+		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms, CurChatId == ChatId andalso (S == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
 	ct:print("tg msg: ~p", [TgMsg]),
 	{ok, State};
+handle_info({pe4kin_update, BotName, TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
+	ct:print("tg msg 2: ~p", [TgMsg]),
+	{ok, State};
 handle_info({pe4kin_send, ChatId, Text}, _Client, #tg_state{bot_name = BotName} = State) ->
-	pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
+	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
+	ct:print("!!pe4kin_send: ~p", [Res]),
 	{ok, State};
 handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
@@ -117,11 +124,17 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 		_ -> {ok, State}
 	end;
 process_stanza(#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt, _Client,
-	#tg_state{bot_name = BotName, rooms = Rooms, nick = ComponentNick} = State) when Nick /= ComponentNick ->
+	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, nick = ComponentNick} = State) when Nick /= ComponentNick ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("msg to tg: ~p", [Pkt]),
-	[pe4kin:send_message(BotName, #{chat_id => TgId, text => <<Nick/binary, ":\n", Text/binary>>})
-		|| #muc_state{muc_jid = MucJid, group_id = TgId} <- Rooms, MucFrom == MucJid],
+	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
+	[try
+		 {ok, #{<<"message_id">> := Id}} = pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>}),
+		 write_link(BotId, OriginId, ChatId, Id)
+	 catch
+		 _ : E ->
+			 ct:print("ERROR: ~p", [E])
+	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
@@ -172,3 +185,8 @@ sub_iq(From, To, Nick, Password) ->
 
 subscribe_component(BotId, MucJid) ->
 	pid(BotId) ! {subscribe_component, MucJid}.
+
+write_link(BotId, OriginId, ChatId, Id) ->
+	mnesia:dirty_write(
+		#xmpp_link{xmpp_id = #xmpp_id{bot_id = BotId, id = OriginId},
+			uid = #tg_id{id = Id, chat_id = ChatId}}).
