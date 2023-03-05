@@ -144,11 +144,22 @@ process_stanza(#message{type = groupchat, from = #jid{resource = Nick} = From, b
 	ct:print("msg to tg: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	[try
-		 {ok, #{<<"message_id">> := Id}} = pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>}),
-		 write_link(BotId, OriginId, ChatId, Id)
+		 case xmpp:get_subtag(Pkt, #replace{}) of
+			 #replace{id = ReplaceId} ->
+				 ct:print("edit msg to tg"),
+				 case get_replace_id(#xmpp_id{id = ReplaceId, bot_id = BotId}, ChatId) of
+					 [] -> ok;
+					 Id ->
+						 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>})
+				 end;
+			 _ ->
+				 {ok, #{<<"message_id">> := Id}} =
+					 pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>}),
+				 write_link(BotId, OriginId, ChatId, Id)
+		 end
 	 catch
-		 _ : E ->
-			 ct:print("ERROR: ~p", [E])
+		 E : R ->
+			 ct:print("ERROR: ~p: ~p", [E, R])
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(Stanza, _Client, State) ->
@@ -215,11 +226,11 @@ get_replace_id(#tg_id{} = TgId, BotId) ->
 	case mnesia:dirty_index_read(xmpp_link, TgId, #xmpp_link.uid) of
 		[#xmpp_link{xmpp_id = #xmpp_id{id = OriginId, bot_id = BotId}}] ->
 			OriginId;
-		[] -> []
+		_ -> []
 	end;
 get_replace_id(#xmpp_id{} = XmppId, ChatId) ->
-	case mnesia:dirty_read(XmppId) of
+	case mnesia:dirty_read(xmpp_link, XmppId) of
 		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}}] ->
 			Id;
-		[] -> []
+		_ -> []
 	end.
