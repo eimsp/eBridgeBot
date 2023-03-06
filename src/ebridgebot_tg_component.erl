@@ -144,13 +144,14 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 	end;
 process_stanza(#message{type = groupchat, from = #jid{resource = Nick}} = Pkt, _Client,
 				#tg_state{nick = ComponentNick} = State) when Nick /= ComponentNick ->
-	(deribit:tag_decorator([#replace{}, #origin_id{}], [Pkt, State], ?MODULE, process_stanza))();
+	(ebridgebot:tag_decorator([#replace{}, #origin_id{}], [Pkt, State], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
 	ct:print("handle component stanza: ~p", [Stanza]),
 	{ok, State}.
 
+%% callbacks for ebridgebot:tag_decorator
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #tg_state{bot_id = BotId} = State]) ->
 	case mnesia:dirty_read(xmpp_link, #xmpp_id{id = OriginId, bot_id = BotId}) of
 		[#xmpp_link{}] -> {ok, State}; %% not send to tg if messages already linked

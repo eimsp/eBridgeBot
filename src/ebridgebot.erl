@@ -21,15 +21,15 @@ run_test(Suite, Testcase) when is_atom(Testcase) ->
 	run_test(Suite, [Testcase]);
 run_test(Suite, Testcases) when is_atom(Suite) ->
 	case application:get_env(ebridgebot, test_path, []) of
-		[] -> ct:print("ERROR: test_path not found. Set ederibit_path in ejabberd section of sys.config", []),
-			{error, invalid_deribit_path};
-		DeribitPath ->
+		[] -> ct:print("ERROR: test_path not found. Set test_path in ejabberd section of sys.config", []),
+			{error, invalid_test_path};
+		TestPath ->
 			ct:run_test(
 				[{testcase, T} || T <- Testcases] ++
 				[{suite, Suite},
-					{dir, filename:join(DeribitPath, "test")},
+					{dir, filename:join(TestPath, "test")},
 					{include, ["_build/dev/lib/escalus", "include"]},
-					{config, filename:join(DeribitPath, "test/test.config")}])
+					{config, filename:join(TestPath, "test/test.config")}])
 	end.
 
 deep_search(Path, List) ->
