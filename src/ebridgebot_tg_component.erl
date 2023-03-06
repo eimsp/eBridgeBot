@@ -45,7 +45,8 @@ handle_info({pe4kin_update, BotName,
 			 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
 				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
 			 write_link(BotId, OriginId, ChatId, Id)
-		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms, CurChatId == ChatId andalso (S == in orelse S == subscribed)],
+		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms,
+			CurChatId == ChatId andalso (S == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
 	{ok, State};
 handle_info({pe4kin_update, BotName,
 	#{<<"edited_message">> :=
@@ -139,23 +140,19 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 		_ -> {ok, State}
 	end;
 process_stanza(#message{type = groupchat, from = #jid{resource = Nick}} = Pkt, _Client,
-				#tg_state{bot_id = BotId, nick = ComponentNick} = State) when Nick /= ComponentNick ->
-	case xmpp:get_subtag(Pkt, #origin_id{}) of
-		#origin_id{id = OriginId} ->
-			case mnesia:dirty_read(xmpp_link, #xmpp_id{id = OriginId, bot_id = BotId}) of
-				[#xmpp_link{}] ->
-					{ok, State}; %% not send to tg if messages already linked
-				[] ->
-					(deribit:tag_decorator([#replace{}], [Pkt, State], ?MODULE, process_stanza))()
-			end;
-		_ -> {ok, State}
-	end;
+				#tg_state{nick = ComponentNick} = State) when Nick /= ComponentNick ->
+	(deribit:tag_decorator([#replace{}, #origin_id{}], [Pkt, State], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
 	ct:print("handle component stanza: ~p", [Stanza]),
 	{ok, State}.
 
+process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #tg_state{bot_id = BotId} = State]) ->
+	case mnesia:dirty_read(xmpp_link, #xmpp_id{id = OriginId, bot_id = BotId}) of
+		[#xmpp_link{}] -> {ok, State}; %% not send to tg if messages already linked
+		[] -> process_stanza([Pkt, State])
+	end;
 process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
