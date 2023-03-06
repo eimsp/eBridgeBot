@@ -42,3 +42,11 @@ deep_search([Key | Tail], N, [Tuple | _] = List) when is_tuple(Tuple) ->
 		{_, Value} -> Value;
 		_ -> []
 	end.
+
+tag_decorator([], Data, Mod, Fun) ->
+	fun() -> Mod:Fun(Data) end;
+tag_decorator([El | TEls], [Pkt | _] = Data, Mod, Fun) ->
+	case xmpp:get_subtag(Pkt, El) of
+		false -> tag_decorator(TEls, Data, Mod, Fun);
+		Tag -> fun() -> Mod:Fun(Tag, Data) end
+	end.
