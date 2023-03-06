@@ -11,8 +11,6 @@
 
 -export([init/1]).
 
--include("ebridgebot.hrl").
-
 -define(SERVER, ?MODULE).
 
 start_link() ->
@@ -28,12 +26,6 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
-    application:start(mnesia),
-    mnesia:create_table(xmpp_link,
-        [{attributes, record_info(fields, xmpp_link)},
-            {index, [xmpp_id, uid]},
-            {disc_copies, [node()]}]),
-
     SupFlags = #{strategy => one_for_one,
         intensity => 1000,
         period => 3600},

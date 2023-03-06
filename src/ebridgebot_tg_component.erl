@@ -6,6 +6,10 @@
 
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
+-record(tg_id, {
+	chat_id = [] :: neg_integer(),
+	id = [] :: integer()}).
+
 -record(muc_state, {
 	group_id = [] :: integer(),
 	muc_jid = [] :: binary(),
@@ -32,6 +36,13 @@ init(Args) ->
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
 %%	self() ! sub_linked_rooms, %% subscribe to all linked rooms %% TODO to think about subscribe and structure of #muc_state.state
 	self() ! enter_linked_rooms, %% enter to all linked rooms
+
+	application:start(mnesia),
+	mnesia:create_table(bot_table(BotId),
+		[{attributes, record_info(fields, xmpp_link)},
+			{index, [xmpp_id, uid]},
+			{disc_copies, [node()]}]),
+
 	{ok, #tg_state{bot_id = BotId, bot_name = BotName, component = Component, nick = Nick, token = Token, rooms = NewRooms}}.
 
 %% Function that handles information message received from the group chat of Telegram
@@ -153,15 +164,15 @@ process_stanza(Stanza, _Client, State) ->
 
 %% callbacks for ebridgebot:tag_decorator
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #tg_state{bot_id = BotId} = State]) ->
-	case mnesia:dirty_index_read(xmpp_link, #xmpp_id{id = OriginId, bot_id = BotId}, xmpp_id) of
-		[#xmpp_link{}] -> {ok, State}; %% not send to tg if messages already linked
+	case dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
+		[_ | _] -> {ok, State}; %% not send to tg if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
 process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("replace msg to tg: ~p", [Pkt]),
-	[case get_replace_id(#xmpp_id{id = ReplaceId, bot_id = BotId}, ChatId) of
+	[case get_replace_id(ReplaceId, {ChatId, BotId}) of
 		 [] -> ok;
 		 Id ->
 			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
@@ -240,14 +251,12 @@ subscribe_component(BotId, MucJid) ->
 
 write_link(BotId, OriginId, ChatId, Id) ->
 	mnesia:dirty_write(
-		#xmpp_link{xmpp_id = #xmpp_id{bot_id = BotId, id = OriginId},
-			uid = #tg_id{id = Id, chat_id = ChatId}}).
+		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
 
 get_replace_id(#tg_id{} = TgId, BotId, First) when First == true; First == false ->
-	Records = mnesia:dirty_index_read(xmpp_link, TgId, uid),
-	case [R || #xmpp_link{xmpp_id = #xmpp_id{bot_id = BotId2}} = R <- Records, BotId == BotId2] of %% TODO One table for bot
+	case dirty_index_read(BotId, TgId, #xmpp_link.uid) of %% TODO One table for bot
 		[_ | _] = FilterRecords ->
-			#xmpp_link{xmpp_id = #xmpp_id{id = OriginId}} =
+			#xmpp_link{xmpp_id = OriginId} =
 				case First of
 					true -> hd(FilterRecords);
 					_ -> lists:last(FilterRecords)
@@ -258,9 +267,16 @@ get_replace_id(#tg_id{} = TgId, BotId, First) when First == true; First == false
 
 get_replace_id(#tg_id{} = TgId, BotId) ->
 	get_replace_id(#tg_id{} = TgId, BotId, true);
-get_replace_id(#xmpp_id{} = XmppId, ChatId) ->
-	case mnesia:dirty_index_read(xmpp_link, XmppId, xmpp_id) of
-		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}}] ->
+get_replace_id(OriginId, {ChatId, BotId}) when is_binary(OriginId) ->
+	case dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
+		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
 			Id;
 		_ -> []
 	end.
+
+bot_table(BotId) -> %% generate table name for bot
+	list_to_atom(atom_to_list(BotId)++"_link").
+
+dirty_index_read(BotId, Key, Field) ->
+	[setelement(1, R, xmpp_link) ||
+		R <- mnesia:dirty_index_read(bot_table(BotId), Key, Field)].
