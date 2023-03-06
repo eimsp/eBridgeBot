@@ -6,6 +6,11 @@
 
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
+-record(muc_state, {
+	group_id = [] :: integer(),
+	muc_jid = [] :: binary(),
+	state = out :: out | in | pending}).
+
 -record(tg_state, {
 	bot_id = [] :: atom(),
 	bot_pid = [] :: pid(),
@@ -13,10 +18,8 @@
 	component = [] :: binary(),
 	nick = [] :: binary(),
 	token = [] :: binary(),
-	rooms = [] :: list(),
+	rooms = [] :: list(#muc_state{}),
 	context = [] :: any()}).
-
--record(muc_state, {group_id = [] :: integer(), muc_jid = [] :: binary(), state = out :: out | in | pending}).
 
 init(Args) ->
 	application:ensure_all_started(pe4kin),
@@ -186,6 +189,7 @@ terminate(Reason, State) ->
 	ct:print("terminate/2 ~p", [{Reason, State}]),
 	ok.
 
+%% component API
 -spec stop(atom()) -> 'ok'.
 stop(BotId) ->
 	Pid = pid(BotId),
