@@ -153,7 +153,7 @@ process_stanza(Stanza, _Client, State) ->
 
 %% callbacks for ebridgebot:tag_decorator
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #tg_state{bot_id = BotId} = State]) ->
-	case mnesia:dirty_read(xmpp_link, #xmpp_id{id = OriginId, bot_id = BotId}) of
+	case mnesia:dirty_index_read(xmpp_link, #xmpp_id{id = OriginId, bot_id = BotId}, xmpp_id) of
 		[#xmpp_link{}] -> {ok, State}; %% not send to tg if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
@@ -164,7 +164,9 @@ process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid
 	[case get_replace_id(#xmpp_id{id = ReplaceId, bot_id = BotId}, ChatId) of
 		 [] -> ok;
 		 Id ->
-			 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>})
+			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
+			 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>}),
+			 write_link(BotId, OriginId, ChatId, Id)
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(_, [#message{} = Pkt, #tg_state{} = State]) ->
@@ -241,14 +243,23 @@ write_link(BotId, OriginId, ChatId, Id) ->
 		#xmpp_link{xmpp_id = #xmpp_id{bot_id = BotId, id = OriginId},
 			uid = #tg_id{id = Id, chat_id = ChatId}}).
 
-get_replace_id(#tg_id{} = TgId, BotId) ->
-	case mnesia:dirty_index_read(xmpp_link, TgId, #xmpp_link.uid) of
-		[#xmpp_link{xmpp_id = #xmpp_id{id = OriginId, bot_id = BotId}}] ->
+get_replace_id(#tg_id{} = TgId, BotId, First) when First == true; First == false ->
+	Records = mnesia:dirty_index_read(xmpp_link, TgId, uid),
+	case [R || #xmpp_link{xmpp_id = #xmpp_id{bot_id = BotId2}} = R <- Records, BotId == BotId2] of %% TODO One table for bot
+		[_ | _] = FilterRecords ->
+			#xmpp_link{xmpp_id = #xmpp_id{id = OriginId}} =
+				case First of
+					true -> hd(FilterRecords);
+					_ -> lists:last(FilterRecords)
+				end,
 			OriginId;
 		_ -> []
-	end;
+	end.
+
+get_replace_id(#tg_id{} = TgId, BotId) ->
+	get_replace_id(#tg_id{} = TgId, BotId, true);
 get_replace_id(#xmpp_id{} = XmppId, ChatId) ->
-	case mnesia:dirty_read(xmpp_link, XmppId) of
+	case mnesia:dirty_index_read(xmpp_link, XmppId, xmpp_id) of
 		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}}] ->
 			Id;
 		_ -> []
