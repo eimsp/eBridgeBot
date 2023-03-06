@@ -31,7 +31,7 @@ init([]) ->
     application:start(mnesia),
     mnesia:create_table(xmpp_link,
         [{attributes, record_info(fields, xmpp_link)},
-            {index, [uid]},
+            {index, [xmpp_id, uid]},
             {disc_copies, [node()]}]),
 
     SupFlags = #{strategy => one_for_one,
