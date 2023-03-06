@@ -34,16 +34,11 @@ init_per_testcase(CaseName, Config) ->
 	[_Host, MucHost, Rooms, Users] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms, escalus_users]],
 	[begin
-		 Node = proplists:get_value(username, UserData),
-		 Server = proplists:get_value(server, UserData),
-		 mnesia:dirty_delete(deribit_storage, {Node, Server})
-	 end || {_, UserData} <- Users],
-	[begin
 		 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
 		 catch mod_muc_admin:destroy_room(Room, MucHost),
 		 ok = mod_muc:create_room(MucHost, Room, RoomOpts), %% TODO add affiliations in room options
 		 timer:sleep(100),
-		 ComponentJid = get_property(component, Config),
+%%		 ComponentJid = get_property(component, Config),
 %%		 ok = mod_muc_admin:set_room_affiliation(Room, MucHost, ComponentJid, <<"admin">>),
 		 [begin
 			  UserCfg = proplists:get_value(U, Users),
