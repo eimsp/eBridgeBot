@@ -155,7 +155,7 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 	end;
 process_stanza(#message{type = groupchat, from = #jid{resource = Nick}} = Pkt, _Client,
 				#tg_state{nick = ComponentNick} = State) when Nick /= ComponentNick ->
-	(ebridgebot:tag_decorator([#replace{}, #origin_id{}], [Pkt, State], ?MODULE, process_stanza))();
+	(ebridgebot:tag_decorator([#replace{}, #apply_to{}, #origin_id{}], [Pkt, State], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
@@ -178,6 +178,19 @@ process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid
 			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 			 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>}),
 			 write_link(BotId, OriginId, ChatId, Id)
+	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
+	{ok, State};
+process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type = groupchat, from = From} = Pkt,
+	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State]) -> %% retract message from tg chat
+	MucFrom = jid:encode(jid:remove_resource(From)),
+	ct:print("retract msg to tg: ~p", [Pkt]),
+	[case get_replace_id(RetractId, {ChatId, BotId}) of
+		 [] -> ok;
+		 Id ->
+			 pe4kin:delete_message(BotName, #{chat_id => ChatId, message_id => Id}),
+			 Table = bot_table(BotId),
+			 Links = dirty_index_read(BotId, #tg_id{id = Id, chat_id = ChatId}, #xmpp_link.uid),
+			 [mnesia:dirty_delete(Table, Time) || #xmpp_link{time = Time} <- Links]
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(_, [#message{} = Pkt, #tg_state{} = State]) ->
@@ -252,6 +265,11 @@ subscribe_component(BotId, MucJid) ->
 write_link(BotId, OriginId, ChatId, Id) ->
 	mnesia:dirty_write(
 		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
+%%delete_link(BotId, OriginId, ChatId, Id) ->
+%%	mnesia:dirty_delete_object(
+%%		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
+
+
 
 get_replace_id(#tg_id{} = TgId, BotId, First) when First == true; First == false ->
 	case dirty_index_read(BotId, TgId, #xmpp_link.uid) of %% TODO One table for bot
