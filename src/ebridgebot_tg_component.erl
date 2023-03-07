@@ -25,6 +25,9 @@
 	rooms = [] :: list(#muc_state{}),
 	context = [] :: any()}).
 
+bot_table(BotId) -> %% generate table name for bot
+	list_to_atom(atom_to_list(BotId)++"_link").
+
 init(Args) ->
 	application:ensure_all_started(pe4kin),
 	[BotId, BotName, BotToken, Component, Nick, Token, Rooms] =
@@ -265,26 +268,13 @@ subscribe_component(BotId, MucJid) ->
 write_link(BotId, OriginId, ChatId, Id) ->
 	mnesia:dirty_write(
 		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
-%%delete_link(BotId, OriginId, ChatId, Id) ->
-%%	mnesia:dirty_delete_object(
-%%		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
-
-
-
-get_replace_id(#tg_id{} = TgId, BotId, First) when First == true; First == false ->
-	case dirty_index_read(BotId, TgId, #xmpp_link.uid) of %% TODO One table for bot
-		[_ | _] = FilterRecords ->
-			#xmpp_link{xmpp_id = OriginId} =
-				case First of
-					true -> hd(FilterRecords);
-					_ -> lists:last(FilterRecords)
-				end,
-			OriginId;
-		_ -> []
-	end.
 
 get_replace_id(#tg_id{} = TgId, BotId) ->
-	get_replace_id(#tg_id{} = TgId, BotId, true);
+	case dirty_index_read(BotId, TgId, #xmpp_link.uid) of
+		[#xmpp_link{xmpp_id = OriginId} | _] ->
+			OriginId;
+		_ -> []
+	end;
 get_replace_id(OriginId, {ChatId, BotId}) when is_binary(OriginId) ->
 	case dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
 		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
@@ -292,9 +282,5 @@ get_replace_id(OriginId, {ChatId, BotId}) when is_binary(OriginId) ->
 		_ -> []
 	end.
 
-bot_table(BotId) -> %% generate table name for bot
-	list_to_atom(atom_to_list(BotId)++"_link").
-
 dirty_index_read(BotId, Key, Field) ->
-	[setelement(1, R, xmpp_link) ||
-		R <- mnesia:dirty_index_read(bot_table(BotId), Key, Field)].
+	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(bot_table(BotId), Key, Field)].
