@@ -124,19 +124,22 @@ handle_info(Info, _Client, State) ->
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
 process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} = Pkt,
-	_Client, #tg_state{rooms = Rooms, component = ComponentJid} = State) ->
+	_Client, #tg_state{bot_id = BotId, rooms = Rooms, component = ComponentJid} = State) ->
+	?dbg("presence available: ~p", [Pkt]),
 	case {jid:encode(To), xmpp:get_subtag(Pkt, #muc_user{})} of
 		{ComponentJid, #muc_user{items = [#muc_item{jid = To}]}} ->
 			CurMucJid = jid:encode(jid:remove_resource(CurMucJID)),
-			NewRooms =
-				lists:foldr(
-					fun(#muc_state{muc_jid = MucJid} = MucState, Acc) when MucJid == CurMucJid ->
-							[MucState#muc_state{state = in} | Acc]; %% set muc_state as in for this presence
-					   (MucState, Acc) ->
-						    [MucState | Acc]
-					end, [], Rooms),
-			{ok, State#tg_state{rooms = NewRooms}};
-		_ -> {ok, State}
+			case lists:keyfind(CurMucJid, #muc_state.muc_jid, Rooms) of
+				#muc_state{} = MucState ->
+					NewRooms = lists:keyreplace(CurMucJid, #muc_state.muc_jid, Rooms, MucState#muc_state{state = in}),
+					?dbg("msg state in ~p = ~p", [BotId, State#tg_state{rooms = NewRooms}]),
+					{ok, State#tg_state{rooms = NewRooms}};
+				_ ->
+					?dbg("user not found in ~p: ~p in ~p", [BotId, CurMucJid, State]),
+					{ok, State}
+			end;
+		_ ->
+			{ok, State}
 	end;
 process_stanza(#message{type = groupchat, from = #jid{resource = Nick}} = Pkt, _Client,
 				#tg_state{nick = ComponentNick} = State) when Nick /= ComponentNick ->
@@ -194,7 +197,7 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza([#message{} = Pkt, #tg_state{} = State]) ->
-	ct:print("group msg to tg: 2: ~p", [Pkt]),
+	ct:print("group msg to tg: 2: ~p\n~p", [Pkt, State]),
 	{ok, State}.
 
 terminate(Reason, State) ->
