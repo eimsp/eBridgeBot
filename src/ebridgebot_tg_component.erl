@@ -88,7 +88,7 @@ handle_info({pe4kin_update, BotName, TgMsg}, _Client, #tg_state{bot_name = BotNa
 	{ok, State};
 handle_info({pe4kin_send, ChatId, Text}, _Client, #tg_state{bot_name = BotName} = State) ->
 	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
-	ct:print("!!pe4kin_send: ~p", [Res]),
+	ct:print("pe4kin_send: ~p", [Res]),
 	{ok, State};
 handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
@@ -225,12 +225,12 @@ stop(BotId) ->
 	Pid = pid(BotId),
 	escalus_component:stop(Pid, <<"stopped">>).
 
-state(Pid) when is_pid(Pid) ->
-	Pid ! {state, self()},
-	receive {state, State} -> State after 1000 -> {error, timeout} end;
 state(BotId) ->
-	state(pid(BotId)).
+	pid(BotId) ! {state, self()},
+	receive {state, State} -> State after 1000 -> {error, timeout} end.
 
+pid(Pid) when is_pid(Pid) ->
+	Pid;
 pid(BotId) ->
 	Children = supervisor:which_children(ebridgebot_sup),
 	case lists:keyfind(BotId, 1, Children) of
