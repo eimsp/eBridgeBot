@@ -3,27 +3,9 @@
 
 -include_lib("xmpp/include/xmpp.hrl").
 -include("ebridgebot.hrl").
+-include("ebridgebot_tg.hrl").
 
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
-
--record(tg_id, {
-	chat_id = [] :: neg_integer(),
-	id = [] :: integer()}).
-
--record(muc_state, {
-	group_id = [] :: integer(),
-	muc_jid = [] :: binary(),
-	state = out :: out | in | pending}).
-
--record(tg_state, {
-	bot_id = [] :: atom(),
-	bot_pid = [] :: pid(),
-	bot_name = [] :: binary(),
-	component = [] :: binary(),
-	nick = [] :: binary(),
-	token = [] :: binary(),
-	rooms = [] :: list(#muc_state{}),
-	context = [] :: any()}).
 
 bot_table(BotId) -> %% generate table name for bot
 	list_to_atom(atom_to_list(BotId)++"_link").
