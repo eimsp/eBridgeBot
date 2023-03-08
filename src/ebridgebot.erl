@@ -50,3 +50,24 @@ tag_decorator([El | TEls], [Pkt | _] = Data, Mod, Fun) ->
 		false -> tag_decorator(TEls, Data, Mod, Fun);
 		Tag -> fun() -> Mod:Fun(Tag, Data) end
 	end.
+
+wait_for_result(Fun, WaitedResult) ->
+	wait_for_result(Fun, WaitedResult, 20, 100).
+wait_for_result(Fun, _WaitedResultFun, 0, _) ->
+	{error, wait_timout, Fun()};
+wait_for_result(Fun, WaitedResultFun, Counter, Interval) when is_function(WaitedResultFun) ->
+	Result = Fun(),
+	?dbg("!@result: ~p", [Result]),
+	case WaitedResultFun(Result) of
+		true -> Result;
+		_ ->
+			timer:sleep(Interval),
+			wait_for_result(Fun, WaitedResultFun, Counter-1, Interval)
+	end;
+wait_for_result(Fun, WaitedResult, Counter, Interval) ->
+	case Fun() of
+		WaitedResult -> WaitedResult;
+		_ ->
+			timer:sleep(Interval),
+			wait_for_result(Fun, WaitedResult, Counter-1, Interval)
+	end.
