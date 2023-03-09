@@ -94,5 +94,18 @@ muc_story(Config) ->
 			#tg_state{bot_id = BotId, rooms = [#muc_state{state = in}]} =
 				wait_for_result(fun() -> ebridgebot_tg_component:state(Pid) end,
 					fun(#tg_state{rooms = [#muc_state{state = in}]}) -> true; (_) -> false end),
+			AliceMsg = <<"Hi, bot!">>, AliceMsg2 = <<"Hi, bot! Edited">>,
+			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
+			escalus:send(Alice, xmpp:encode(AlicePkt)),
+			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
+			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)) end, 1),
+			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
+			AlicePkt2 = #message{type = groupchat, to = jid:decode(RoomJid), body = [#text{data = AliceMsg2}],
+				sub_els = [#replace{id = OriginId}, #origin_id{id = OriginId2 = ebridgebot:gen_uuid()}]},
+			escalus:send(Alice, xmpp:encode(AlicePkt2)),
+			escalus:assert(is_groupchat_message, [AliceMsg2], escalus:wait_for_stanza(Alice)),
+			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}, #xmpp_link{xmpp_id = OriginId2, uid = TgUid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
 			ok
 		end).
