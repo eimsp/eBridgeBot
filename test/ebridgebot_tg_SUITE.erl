@@ -79,8 +79,8 @@ muc_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	BotId = get_property(bot_id, Config),
-	[Pid] = [get_property(Key, Config) || Key <- [component_pid]],
+%%	BotId = get_property(bot_id, Config),
+	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	#tg_state{bot_id = BotId, rooms = []} = ebridgebot_tg_component:state(Pid),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
@@ -101,11 +101,44 @@ muc_story(Config) ->
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)) end, 1),
 			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
-			AlicePkt2 = #message{type = groupchat, to = jid:decode(RoomJid), body = [#text{data = AliceMsg2}],
+
+			AlicePkt2 = #message{type = groupchat, to = RoomJID = jid:decode(RoomJid), body = [#text{data = AliceMsg2}], %% edit message from xmpp
 				sub_els = [#replace{id = OriginId}, #origin_id{id = OriginId2 = ebridgebot:gen_uuid()}]},
 			escalus:send(Alice, xmpp:encode(AlicePkt2)),
 			escalus:assert(is_groupchat_message, [AliceMsg2], escalus:wait_for_stanza(Alice)),
-			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}, #xmpp_link{xmpp_id = OriginId2, uid = TgUid = #tg_id{}}] =
+			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{chat_id = ChatId, id = MessageId}}, %% add edit link to bot link table
+				#xmpp_link{xmpp_id = OriginId2, uid = TgUid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
+
+			AliceRetractPkt = #message{type = groupchat, to = RoomJID, %% retract from xmpp client
+				sub_els = [#origin_id{id = ebridgebot:gen_uuid()}, #apply_to{id = OriginId2, sub_els = [#retract{}]}]},
+			escalus:send(Alice, xmpp:encode(AliceRetractPkt)),
+			#apply_to{id = OriginId2} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #apply_to{}),
+			[] = wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid, #xmpp_link.uid) end),
+			[] = mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)),
+
+			TgAliceMsg = <<"Hello from telegram!">>,
+			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from telegram
+			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
+			TgUid2 = TgUid#tg_id{id = MessageId +1},
+			[#xmpp_link{uid = TgUid2}] =
+				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
 			ok
 		end).
+
+%% tg API
+tg_message(ChatId, MessageId, Username, Text) ->
+	#{<<"message">> =>
+	#{<<"chat">> =>
+	#{<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>,
+		<<"type">> => <<"group">>},
+		<<"date">> => erlang:system_time(second),
+		<<"from">> =>
+		#{<<"first_name">> => Username,
+			<<"id">> => rand:uniform(10000000000),
+			<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
+			<<"language_code">> => <<"en">>,
+			<<"last_name">> => Username,
+			<<"username">> => Username},
+		<<"message_id">> => MessageId, <<"text">> => Text},
+		<<"update_id">> => rand:uniform(10000000000)}.
