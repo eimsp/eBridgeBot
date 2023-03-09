@@ -57,7 +57,6 @@ wait_for_result(Fun, _WaitedResultFun, 0, _) ->
 	{error, wait_timout, Fun()};
 wait_for_result(Fun, WaitedResultFun, Counter, Interval) when is_function(WaitedResultFun) ->
 	Result = Fun(),
-	?dbg("!@result: ~p", [Result]),
 	case WaitedResultFun(Result) of
 		true -> Result;
 		_ ->
@@ -71,3 +70,17 @@ wait_for_result(Fun, WaitedResult, Counter, Interval) ->
 			timer:sleep(Interval),
 			wait_for_result(Fun, WaitedResult, Counter-1, Interval)
 	end.
+
+wait_for_list(Fun) ->
+	wait_for_list(Fun, 0).
+wait_for_list(Fun, Length) ->
+	wait_for_list(Fun, Length, 20, 100).
+wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integer(Interval), is_integer(Length)->
+	PredFun =
+		fun(Arg) when is_list(Arg), length(Arg) == Length -> true;
+			(_Arg) -> false
+		end,
+	wait_for_result(Fun, PredFun, Counter, Interval).
+
+host() ->
+	hd(ejabberd_option:hosts()).
