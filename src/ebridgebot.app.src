@@ -5,19 +5,11 @@
   {mod, {ebridgebot_app, []}},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    xmpp,
+    pe4kin
    ]},
-  {env,
-   [{bots,
-    [{tg,
-     [{component, <<"tg.localhost">>},
-      {name, <<"ebridge_bot">>},
-      {host, <<"127.0.0.1">>},
-      {component, <<"tg.localhost">>},
-      {nick, <<"tg_bot">>},
-      {password, <<"secret">>},
-      {port, 8888},
-      {token, <<"6066841531:AAEK0aUdaP6eoJWcS0020VOyYQpNhhMpBPE">>}]}]}]},
+  {env, []},
     {modules, []},
 
   {licenses, ["Apache 2.0"]},
