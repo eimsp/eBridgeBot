@@ -26,10 +26,10 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
+    mnesia:create_schema([node()]),
     SupFlags = #{strategy => one_for_one,
         intensity => 1000,
         period => 3600},
-
     Bots = application:get_env(ebridgebot, bots, []),
     ChildSpecs = [
         #{id => BotId,
