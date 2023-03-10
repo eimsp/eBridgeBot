@@ -58,8 +58,9 @@ handle_info({pe4kin_update, BotName,
 	[case get_replace_id(#tg_id{chat_id = ChatId, id = Id}, BotId) of
 		 [] -> ok;
 		 ReplaceId ->
-			 Pkt = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
-			 escalus:send(Client, xmpp:encode(Pkt))
+			 Pkt = #message{id = OriginId} = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
+			 escalus:send(Client, xmpp:encode(Pkt)),
+			 write_link(BotId, OriginId, ChatId, Id) %% TODO maybe you don't need to write because there is no retract from Telegram
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms, CurChatId == ChatId andalso (S == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
