@@ -55,21 +55,11 @@ end_per_suite(Config) ->
 	application:start(ebridgebot),
 	escalus:end_per_suite(Config).
 
-%%init_per_testcase(test_msg, Config) ->
-%%	meck:new(ebridgebot_tg_component),
-%%%%	meck:expect(ebridgebot_tg_component, process_stanza, fun process_stanza/3),
-%%	escalus:init_per_testcase(test_msg, Config);
-%%init_per_testcase(muc_story, Config) ->
-%%	ebridgebot_component_SUITE:init_per_testcase(CaseName, Config).
 init_per_testcase(CaseName, Config) ->
 	ebridgebot_component_SUITE:init_per_testcase(CaseName, Config).
 
 
-%%end_per_testcase(test_msg, Config) ->
-%%	meck:unload(ebridgebot_tg_component),
-%%	escalus:end_per_testcase(test_msg, Config);
 end_per_testcase(CaseName, Config) ->
-%%	catch meck:unload(ebridgebot_tg_component),
 	BotId = get_property(bot_id, Config),
 	{ok, atomic} = mnesia:delete_table(ebridgebot_tg_component:bot_table(BotId)),
 	escalus:end_per_testcase(CaseName, Config).
@@ -79,8 +69,8 @@ muc_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-%%	BotId = get_property(bot_id, Config),
-	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, _Component, BotName] = [
+		get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	#tg_state{bot_id = BotId, rooms = []} = ebridgebot_tg_component:state(Pid),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
@@ -88,12 +78,15 @@ muc_story(Config) ->
 			escalus_client:wait_for_stanzas(Alice, 1),
 			Pid ! {link_rooms, ChatId, RoomJid},
 			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = out}]} = ebridgebot_tg_component:state(Pid),
+
 			Pid ! enter_linked_rooms,
 			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = pending}]} = ebridgebot_tg_component:state(Pid),
 			escalus_client:wait_for_stanzas(Alice, 1),
+
 			#tg_state{bot_id = BotId, rooms = [#muc_state{state = in}]} =
 				wait_for_result(fun() -> ebridgebot_tg_component:state(Pid) end,
 					fun(#tg_state{rooms = [#muc_state{state = in}]}) -> true; (_) -> false end),
+
 			AliceMsg = <<"Hi, bot!">>, AliceMsg2 = <<"Hi, bot! Edited">>,
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
@@ -117,18 +110,27 @@ muc_story(Config) ->
 			[] = wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid, #xmpp_link.uid) end),
 			[] = mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)),
 
-			TgAliceMsg = <<"Hello from telegram!">>,
-			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from telegram
+			TgAliceMsg = <<"Hello from telegram!">>, TgAliceMsg2 = <<"2: Hello from telegram!">>,
+			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId +1},
 			[#xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
+
+			%% emulate editing message from Telegram
+			Pid ! {pe4kin_update, BotName, tg_message(<<"edited_message">>, ChatId, MessageId + 1, AliceNick, TgAliceMsg2)},
+			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
+			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
+				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
 			ok
 		end).
 
 %% tg API
 tg_message(ChatId, MessageId, Username, Text) ->
-	#{<<"message">> =>
+	tg_message(<<"message">>, ChatId, MessageId, Username, Text).
+tg_message(Message, ChatId, MessageId, Username, Text) %% emulate Telegram message
+	when Message == <<"message">>; Message == <<"edited_message">> ->
+	#{Message =>
 	#{<<"chat">> =>
 	#{<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>,
 		<<"type">> => <<"group">>},
