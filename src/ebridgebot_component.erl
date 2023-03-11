@@ -185,15 +185,6 @@ pid(BotId) ->
 		_ -> {error, bot_not_found}
 	end.
 
-enter_groupchat(BotId, MucJid) ->
-	pid(BotId) ! {enter_groupchat, MucJid}.
-
-enter_linked_rooms(BotId) ->
-	pid(BotId) ! enter_linked_rooms.
-
-send(BotId, ChatId, Text) ->
-	pid(BotId) ! {pe4kin_send, ChatId, Text}.
-
 sub_iq(From, To, Nick) ->
 	sub_iq(From, To, Nick, <<>>).
 sub_iq(From, To, Nick, Password) ->
