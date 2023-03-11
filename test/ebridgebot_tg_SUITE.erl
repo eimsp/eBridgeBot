@@ -47,7 +47,7 @@ init_per_testcase(CaseName, Config) ->
 end_per_testcase(CaseName, Config) ->
 	BotId = get_property(bot_id, Config),
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
-	{ok, atomic} = mnesia:delete_table(ebridgebot_component:bot_table(BotId)),
+	{ok, atomic} = mnesia:delete_table(ebridgebot:bot_table(BotId)),
 	escalus:end_per_testcase(CaseName, Config).
 
 muc_story(Config) ->
@@ -76,7 +76,7 @@ muc_story(Config) ->
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
-			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot_component:bot_table(BotId)) end, 1),
+			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 1),
 			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot_component:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
 
@@ -93,7 +93,7 @@ muc_story(Config) ->
 			escalus:send(Alice, xmpp:encode(AliceRetractPkt)),
 			#apply_to{id = OriginId2} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #apply_to{}),
 			[] = wait_for_list(fun() -> ebridgebot_component:index_read(BotId, TgUid, #xmpp_link.uid) end),
-			[] = mnesia:dirty_all_keys(ebridgebot_component:bot_table(BotId)),
+			[] = mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)),
 
 			TgAliceMsg = <<"Hello from telegram!">>, TgAliceMsg2 = <<"2: Hello from telegram!">>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
@@ -134,7 +134,7 @@ subscribe_muc_story(Config) ->
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
-			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot_component:bot_table(BotId)) end, 1),
+			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 1),
 			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{id = MessageId}}] =
 				wait_for_list(fun() -> ebridgebot_component:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
 

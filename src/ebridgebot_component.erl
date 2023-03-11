@@ -8,9 +8,6 @@
 
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
-bot_table(BotId) -> %% generate table name for bot
-	list_to_atom(atom_to_list(BotId)++"_link").
-
 init(Args) ->
 	[BotId, BotName, Component, Nick, Rooms, Module] =
 		[proplists:get_value(K, Args) ||
@@ -19,7 +16,7 @@ init(Args) ->
 	self() ! enter_linked_rooms, %% enter to all linked rooms
 
 	application:start(mnesia),
-	mnesia:create_table(bot_table(BotId),
+	mnesia:create_table(ebridgebot:bot_table(BotId),
 		[{attributes, record_info(fields, xmpp_link)},
 			{index, [xmpp_id, uid]},
 			{disc_copies, [node()]}]),
@@ -143,7 +140,7 @@ process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid } | _] ->
 			 Module:delete_message(State#{uid => Uid}),
-			 Table = bot_table(BotId),
+			 Table = ebridgebot:bot_table(BotId),
 			 [mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- index_read(BotId, Uid, #xmpp_link.uid)];
 		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
@@ -212,12 +209,9 @@ edit_msg(From, To, Text, ReplaceId) ->
 	#message{id = OriginId, type = groupchat, from = From, to = To, body = [#text{data = Text}],
 		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId}]}.
 
-subscribe_component(BotId, MucJid) ->
-	pid(BotId) ! {subscribe_component, MucJid}.
-
 write_link(BotId, OriginId, Uid) ->
 	mnesia:dirty_write(
-		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = Uid}, bot_table(BotId))).
+		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = Uid}, ebridgebot:bot_table(BotId))).
 
 index_read(BotId, Key, Field) ->
-	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(bot_table(BotId), Key, Field)].
+	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Field)].

@@ -63,3 +63,8 @@ wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integ
 			(_Arg) -> false
 		end,
 	wait_for_result(Fun, PredFun, Counter, Interval).
+
+%% component help API
+
+bot_table(BotId) -> %% generate table name for bot
+	list_to_atom(atom_to_list(BotId)++"_link").
