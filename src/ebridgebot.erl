@@ -7,7 +7,7 @@ gen_uuid() ->
 	list_to_binary(uuid:uuid_to_string(uuid:get_v4())).
 
 run_test() ->
-	run_test(ebridgebot_component_SUITE, []).
+	run_test(ebridgebot_tg_SUITE, []).
 run_test(Suite) ->
 	run_test(Suite, []).
 run_test(Suite, Testcase) when is_atom(Testcase) ->

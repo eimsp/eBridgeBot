@@ -13,7 +13,6 @@
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
--import(ebridgebot_component_SUITE, [get_property/2, enter_room/3]).
 -import(ebridgebot, [wait_for_result/2, wait_for_result/4, wait_for_list/1, wait_for_list/2]).
 
 all() ->
@@ -41,7 +40,20 @@ init_per_testcase(CaseName, Config) ->
 		{port, escalus_ct:get_config(ejabberd_service_port)},
 		{linked_rooms, []}] ++ BotArgs,
 	{ok, Pid} = escalus_component:start({local, BotId}, ebridgebot_component, Args, Args),
-	ebridgebot_component_SUITE:init_per_testcase(CaseName, [{component_pid, Pid} | Args ++ Config]).
+	[_Host, MucHost, Rooms, Users] =
+		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms, escalus_users]],
+	[begin
+		 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
+		 catch mod_muc_admin:destroy_room(Room, MucHost),
+		 ok = mod_muc:create_room(MucHost, Room, RoomOpts), %% TODO add affiliations in room options
+		 timer:sleep(100),
+		 [begin
+			  UserCfg = proplists:get_value(U, Users),
+			  Jid = jid:to_string(list_to_tuple([proplists:get_value(K, UserCfg) || K <- [username, server]] ++ [<<>>])),
+			  ok = mod_muc_admin:set_room_affiliation(Room, MucHost, Jid, atom_to_binary(Aff))
+		  end || {U, Aff} <- Affs]
+	 end || {_, Opts} <- Rooms],
+	[{component_pid, Pid} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
 
 end_per_testcase(CaseName, Config) ->
@@ -166,3 +178,23 @@ tg_message(Message, ChatId, MessageId, Username, Text) %% emulate Telegram messa
 			<<"username">> => Username},
 		<<"message_id">> => MessageId, <<"text">> => Text},
 		<<"update_id">> => rand:uniform(10000000000)}.
+
+%% test API
+get_property(PropName, Proplist) ->
+	case lists:keyfind(PropName, 1, Proplist) of
+		{PropName, Value} ->
+			Value;
+		false ->
+			throw({missing_property, PropName})
+	end.
+
+enter_room(Client, RoomJid, Nick) ->
+	escalus:send(Client, enter_groupchat(Client, RoomJid, Nick)),
+	escalus_client:wait_for_stanzas(Client, 2). %% Client wait for 2 presences from ChatRoom
+
+enter_groupchat(#client{jid = FromJid}, RoomJid, Nick) ->
+	enter_groupchat(FromJid, RoomJid, Nick);
+enter_groupchat(FromJid, RoomJid, Nick) ->
+	#xmlel{name = <<"presence">>,
+		attrs = [{<<"from">>, FromJid}, {<<"to">>, <<RoomJid/binary, "/", Nick/binary>>}],
+		children = [#xmlel{name = <<"x">>, attrs = [{<<"xmlns">>, ?NS_MUC}]}]}.
