@@ -54,12 +54,12 @@ handle_info({pe4kin_update, BotName,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
 	ct:print("edit tg msg groupchat: ~p", [TgMsg]),
-	[case get_linked_id(#tg_id{chat_id = ChatId, id = Id}, BotId) of
-		 [] -> ok;
-		 ReplaceId ->
+	[case index_read(BotId, #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
+		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
 			 Pkt = #message{id = OriginId} = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
 			 escalus:send(Client, xmpp:encode(Pkt)),
-			 write_link(BotId, OriginId, ChatId, Id) %% TODO maybe you don't need to write because there is no retract from Telegram
+			 write_link(BotId, OriginId, ChatId, Id); %% TODO maybe you don't need to write because there is no retract from Telegram
+	    _ -> ok
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
@@ -171,25 +171,25 @@ process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("replace msg to tg: ~p", [Pkt]),
-	[case get_linked_id(ReplaceId, {ChatId, BotId}) of
-		 [] -> ok;
-		 Id ->
+	[case index_read(BotId, ReplaceId, #xmpp_link.xmpp_id) of
+		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
 			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 			 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>}),
-			 write_link(BotId, OriginId, ChatId, Id)
+			 write_link(BotId, OriginId, ChatId, Id);
+		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type = groupchat, from = From} = Pkt,
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State | _]) -> %% retract message from tg chat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("retract msg to tg: ~p", [Pkt]),
-	[case get_linked_id(RetractId, {ChatId, BotId}) of
-		 [] -> ok;
-		 Id ->
+	[case index_read(BotId, RetractId, #xmpp_link.xmpp_id) of
+		 [#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
 			 pe4kin:delete_message(BotName, #{chat_id => ChatId, message_id => Id}),
 			 Table = bot_table(BotId),
 			 Links = index_read(BotId, #tg_id{id = Id, chat_id = ChatId}, #xmpp_link.uid),
-			 [mnesia:dirty_delete(Table, Time) || #xmpp_link{time = Time} <- Links]
+			 [mnesia:dirty_delete(Table, Time) || #xmpp_link{time = Time} <- Links];
+		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(_, [#message{} = Pkt, #tg_state{} = State | _]) ->
@@ -264,19 +264,6 @@ subscribe_component(BotId, MucJid) ->
 write_link(BotId, OriginId, ChatId, Id) ->
 	mnesia:dirty_write(
 		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
-
-get_linked_id(#tg_id{} = TgId, BotId) ->
-	case index_read(BotId, TgId, #xmpp_link.uid) of
-		[#xmpp_link{xmpp_id = OriginId} | _] ->
-			OriginId;
-		_ -> []
-	end;
-get_linked_id(OriginId, {ChatId, BotId}) when is_binary(OriginId) ->
-	case index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
-		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
-			Id;
-		_ -> []
-	end.
 
 index_read(BotId, Key, Field) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(bot_table(BotId), Key, Field)].
