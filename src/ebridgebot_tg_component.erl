@@ -44,8 +44,8 @@ handle_info({pe4kin_update, BotName,
 			 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
 				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
 			 write_link(BotId, OriginId, ChatId, Id)
-		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms,
-			CurChatId == ChatId andalso (S == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
+		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
+			CurChatId == ChatId andalso (E == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
 	{ok, State};
 handle_info({pe4kin_update, BotName,
 	#{<<"edited_message">> :=
@@ -61,7 +61,7 @@ handle_info({pe4kin_update, BotName,
 			 Pkt = #message{id = OriginId} = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
 			 escalus:send(Client, xmpp:encode(Pkt)),
 			 write_link(BotId, OriginId, ChatId, Id) %% TODO maybe you don't need to write because there is no retract from Telegram
-	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = S} <- Rooms, CurChatId == ChatId andalso (S == in orelse S == subscribed)],
+	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
 	ct:print("tg msg: ~p", [TgMsg]),
@@ -76,7 +76,7 @@ handle_info({pe4kin_send, ChatId, Text}, _Client, #tg_state{bot_name = BotName} 
 handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
 	NewRooms =
-		case [exist || #muc_state{group_id = GId, muc_jid = J} <- Rooms, TgRoomId == GId, LMucJid == J] of
+		case [ok || #muc_state{group_id = GId, muc_jid = J} <- Rooms, TgRoomId == GId, LMucJid == J] of
 			[] -> [#muc_state{group_id = TgRoomId, muc_jid = LMucJid} | Rooms];
 			_ -> Rooms
 		end,
@@ -92,12 +92,12 @@ handle_info({subscribe_component, MucJid}, Client, #tg_state{component = Compone
 handle_info(enter_linked_rooms, Client, #tg_state{rooms = Rooms} = State) ->
 	NewRooms =
 		lists:foldr(
-			fun(#muc_state{muc_jid = MucJid, state = out} = MucState, Acc) ->
+			fun(#muc_state{muc_jid = MucJid, state = {out, S}} = MucState, Acc) ->
 					case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
 						#muc_state{} -> ok;
 						false -> handle_info({enter_groupchat, MucJid}, Client, State)
 					end,
-					[MucState#muc_state{state = pending} | Acc];
+					[MucState#muc_state{state = {pending, S}} | Acc];
 				(MucState, Acc) ->
 					[MucState | Acc]
 			end, [], Rooms),
@@ -105,12 +105,12 @@ handle_info(enter_linked_rooms, Client, #tg_state{rooms = Rooms} = State) ->
 handle_info(sub_linked_rooms, Client, #tg_state{rooms = Rooms} = State) ->
 	NewRooms =
 		lists:foldr(
-			fun(#muc_state{muc_jid = MucJid, state = out} = MucState, Acc) ->
+			fun(#muc_state{muc_jid = MucJid, state = {E, unsubscribed}} = MucState, Acc) ->
 					case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
 						#muc_state{} -> ok;
 						false -> handle_info({subscribe_component, MucJid}, Client, State)
 					end,
-					[MucState#muc_state{state = subscribed} | Acc];
+					[MucState#muc_state{state = {E, subscribed}} | Acc];
 				(MucState, Acc) ->
 					[MucState | Acc]
 			end, [], Rooms),
@@ -131,8 +131,8 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 		{ComponentJid, #muc_user{items = [#muc_item{jid = To}]}} ->
 			CurMucJid = jid:encode(jid:remove_resource(CurMucJID)),
 			case lists:keyfind(CurMucJid, #muc_state.muc_jid, Rooms) of
-				#muc_state{} = MucState ->
-					NewRooms = lists:keyreplace(CurMucJid, #muc_state.muc_jid, Rooms, MucState#muc_state{state = in}),
+				#muc_state{state = {_, S}} = MucState ->
+					NewRooms = lists:keyreplace(CurMucJid, #muc_state.muc_jid, Rooms, MucState#muc_state{state = {in, S}}),
 					?dbg("msg state in ~p = ~p", [BotId, State#tg_state{rooms = NewRooms}]),
 					{ok, State#tg_state{rooms = NewRooms}};
 				_ ->

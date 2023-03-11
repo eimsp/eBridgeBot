@@ -7,7 +7,7 @@
 -record(muc_state, {
 	group_id = [] :: any(),
 	muc_jid = [] :: binary(),
-	state = out :: out | in | pending}).
+	state = {out, unsubscribed} :: {out | in | pending, subscribes | unsubscribed}}).
 
 -record(xmpp_link, {
 	time = erlang:system_time(microsecond) :: integer(),
