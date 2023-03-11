@@ -1,4 +1,4 @@
--module(ebridgebot_tg_component).
+-module(ebridgebot_component).
 
 %% API
 -compile(export_all).
@@ -7,19 +7,15 @@
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
-%%-export([init/1, handle_info/3, process_stanza/3, terminate/2]).
+-export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
 bot_table(BotId) -> %% generate table name for bot
 	list_to_atom(atom_to_list(BotId)++"_link").
 
 init(Args) ->
-	application:ensure_all_started(pe4kin),
-	[BotId, BotName, BotToken, Component, Nick, Rooms] =
+	[BotId, BotName, Component, Nick, Rooms, Module] =
 		[proplists:get_value(K, Args) ||
-			K <- [bot_id, name, token, component, nick, linked_rooms]],
-	pe4kin:launch_bot(BotName, BotToken, #{receiver => true}),
-	pe4kin_receiver:subscribe(BotName, self()),
-	pe4kin_receiver:start_http_poll(BotName, #{limit => 100, timeout => 60}),
+			K <- [bot_id, name, component, nick, linked_rooms, module]],
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
 	self() ! enter_linked_rooms, %% enter to all linked rooms
 
@@ -28,8 +24,8 @@ init(Args) ->
 		[{attributes, record_info(fields, xmpp_link)},
 			{index, [xmpp_id, uid]},
 			{disc_copies, [node()]}]),
-
-	{ok, #{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, token => BotToken, rooms => NewRooms}}.
+	{ok, State} = Module:init(Args),
+	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module}}.
 
 %% Function that handles information message received from the group chat of Telegram
 handle_info({pe4kin_update, BotName,
