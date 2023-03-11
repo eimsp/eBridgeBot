@@ -3,13 +3,6 @@
 
 -include("ebridgebot.hrl").
 
-link_room(BotId, TgGroupId, MucJid) ->
-	Pid = ebridgebot_component:pid(BotId),
-	Pid ! {link_rooms, TgGroupId, MucJid}.
-get_bot_name_by_id(BotId) ->
-	Bots = application:get_env(?MODULE, bots, []),
-	deep_search([BotId, name], Bots).
-
 gen_uuid() ->
 	list_to_binary(uuid:uuid_to_string(uuid:get_v4())).
 
@@ -21,7 +14,7 @@ run_test(Suite, Testcase) when is_atom(Testcase) ->
 	run_test(Suite, [Testcase]);
 run_test(Suite, Testcases) when is_atom(Suite) ->
 	case application:get_env(ebridgebot, test_path, []) of
-		[] -> ct:print("ERROR: test_path not found. Set test_path in ejabberd section of sys.config", []),
+		[] -> ct:print("ERROR: test_path not found. Set test_path in ebridgebot section of sys.config", []),
 			{error, invalid_test_path};
 		TestPath ->
 			ct:run_test(
@@ -30,17 +23,6 @@ run_test(Suite, Testcases) when is_atom(Suite) ->
 					{dir, filename:join(TestPath, "test")},
 					{include, ["_build/dev/lib/escalus", "include"]},
 					{config, filename:join(TestPath, "test/test.config")}])
-	end.
-
-deep_search(Path, List) ->
-	deep_search(Path, 1, List).
-deep_search([], _N, List) -> List;
-deep_search([Key | Tail], N, [Tuple | _] = List) when is_tuple(Tuple) ->
-	case lists:keyfind(Key, N, List) of
-		{_, [_ | _] = Value} when Tail /= [] ->
-			deep_search(Tail, Value);
-		{_, Value} -> Value;
-		_ -> []
 	end.
 
 tag_decorator([], Data, Mod, Fun) ->
@@ -81,6 +63,3 @@ wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integ
 			(_Arg) -> false
 		end,
 	wait_for_result(Fun, PredFun, Counter, Interval).
-
-host() ->
-	hd(ejabberd_option:hosts()).
