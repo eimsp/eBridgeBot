@@ -1,11 +1,13 @@
 -module(ebridgebot_tg_component).
+
+%% API
 -compile(export_all).
 
 -include_lib("xmpp/include/xmpp.hrl").
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
--export([init/1, handle_info/3, process_stanza/3, terminate/2]).
+%%-export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
 bot_table(BotId) -> %% generate table name for bot
 	list_to_atom(atom_to_list(BotId)++"_link").
@@ -27,24 +29,24 @@ init(Args) ->
 			{index, [xmpp_id, uid]},
 			{disc_copies, [node()]}]),
 
-	{ok, #tg_state{bot_id = BotId, bot_name = BotName, component = Component, nick = Nick, token = BotToken, rooms = NewRooms}}.
+	{ok, #{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, token => BotToken, rooms => NewRooms}}.
 
 %% Function that handles information message received from the group chat of Telegram
 handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
-		#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
-		  <<"from">> := #{<<"username">> := TgUserName},
-			<<"message_id">> := Id,
-		  <<"text">> := Text}}} = TgMsg, Client,
-	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
+	#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
+		<<"from">> := #{<<"username">> := TgUserName},
+		<<"message_id">> := Id,
+		<<"text">> := Text}}} = TgMsg, Client,
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
 	ct:print("tg msg groupchat: ~p", [TgMsg]),
-		[begin
-			 OriginId = ebridgebot:gen_uuid(),
-			 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
-				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-			 write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
-		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
-			CurChatId == ChatId andalso (E == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
+	[begin
+		 OriginId = ebridgebot:gen_uuid(),
+		 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
+			 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
+		 write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
+	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
+		CurChatId == ChatId andalso (E == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
 	{ok, State};
 handle_info({pe4kin_update, BotName,
 	#{<<"edited_message">> :=
@@ -52,68 +54,68 @@ handle_info({pe4kin_update, BotName,
 		<<"from">> := #{<<"username">> := TgUserName},
 		<<"message_id">> := Id,
 		<<"text">> := Text}}} = TgMsg, Client,
-	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
 	ct:print("edit tg msg groupchat: ~p", [TgMsg]),
 	[case index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
 		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
 			 Pkt = #message{id = OriginId} = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
 			 escalus:send(Client, xmpp:encode(Pkt)),
 			 write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
-	    _ -> ok
+		 _ -> ok
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
-handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
+handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	ct:print("tg msg: ~p", [TgMsg]),
 	{ok, State};
-handle_info({pe4kin_update, BotName, TgMsg}, _Client, #tg_state{bot_name = BotName} = State) ->
+handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	ct:print("tg msg2: ~p", [TgMsg]),
 	{ok, State};
-handle_info({pe4kin_send, ChatId, Text}, _Client, #tg_state{bot_name = BotName} = State) ->
+handle_info({pe4kin_send, ChatId, Text}, _Client, #{bot_name := BotName} = State) ->
 	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
 	ct:print("pe4kin_send: ~p", [Res]),
 	{ok, State};
-handle_info({link_rooms, TgRoomId, MucJid}, _Client, #tg_state{rooms = Rooms} = State) ->
+handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
 	NewRooms =
-		case [ok || #muc_state{group_id = GId, muc_jid = J} <- Rooms, TgRoomId == GId, LMucJid == J] of
-			[] -> [#muc_state{group_id = TgRoomId, muc_jid = LMucJid} | Rooms];
+		case [ok || #muc_state{group_id = ChatId2, muc_jid = J} <- Rooms, ChatId == ChatId2, LMucJid == J] of
+			[] -> [#muc_state{group_id = ChatId, muc_jid = LMucJid} | Rooms];
 			_ -> Rooms
 		end,
-	{ok, State#tg_state{rooms = NewRooms}};
-handle_info({enter_groupchat, MucJid}, Client, #tg_state{component = Component, nick = Nick} = State) when is_binary(MucJid) ->
+	{ok, State#{rooms => NewRooms}};
+handle_info({enter_groupchat, MucJid}, Client, #{component := Component, nick := Nick} = State) when is_binary(MucJid) ->
 	EnterPresence = #presence{from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick), sub_els = [#muc{}]},
 	escalus:send(Client, xmpp:encode(EnterPresence)),
 	{ok, State};
-handle_info({subscribe_component, MucJid}, Client, #tg_state{component = Component, nick = Nick} = State) when is_binary(MucJid) ->
+handle_info({subscribe_component, MucJid}, Client, #{component := Component, nick := Nick} = State) when is_binary(MucJid) ->
 	ct:print("subscribe_component: ~p", [MucJid]),
 	escalus:send(Client, xmpp:encode(sub_iq(jid:make(Component), jid:decode(MucJid), Nick))),
 	{ok, State};
-handle_info(enter_linked_rooms, Client, #tg_state{rooms = Rooms} = State) ->
+handle_info(enter_linked_rooms, Client, #{rooms := Rooms} = State) ->
 	NewRooms =
 		lists:foldr(
 			fun(#muc_state{muc_jid = MucJid, state = {out, S}} = MucState, Acc) ->
-					case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
-						#muc_state{} -> ok;
-						false -> handle_info({enter_groupchat, MucJid}, Client, State)
-					end,
-					[MucState#muc_state{state = {pending, S}} | Acc];
+				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
+					#muc_state{} -> ok;
+					false -> handle_info({enter_groupchat, MucJid}, Client, State)
+				end,
+				[MucState#muc_state{state = {pending, S}} | Acc];
 				(MucState, Acc) ->
 					[MucState | Acc]
 			end, [], Rooms),
-	{ok, State#tg_state{rooms = NewRooms}};
-handle_info(sub_linked_rooms, Client, #tg_state{rooms = Rooms} = State) ->
+	{ok, State#{rooms => NewRooms}};
+handle_info(sub_linked_rooms, Client, #{rooms := Rooms} = State) ->
 	NewRooms =
 		lists:foldr(
 			fun(#muc_state{muc_jid = MucJid, state = {E, unsubscribed}} = MucState, Acc) ->
-					case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
-						#muc_state{} -> ok;
-						false -> handle_info({subscribe_component, MucJid}, Client, State)
-					end,
-					[MucState#muc_state{state = {E, subscribed}} | Acc];
+				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
+					#muc_state{} -> ok;
+					false -> handle_info({subscribe_component, MucJid}, Client, State)
+				end,
+				[MucState#muc_state{state = {E, subscribed}} | Acc];
 				(MucState, Acc) ->
 					[MucState | Acc]
 			end, [], Rooms),
-	{ok, State#tg_state{rooms = NewRooms}};
+	{ok, State#{rooms => NewRooms}};
 handle_info({state, Pid}, _Client, State) ->
 	Pid ! {state, State},
 	{ok, State};
@@ -124,7 +126,7 @@ handle_info(Info, _Client, State) ->
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
 process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} = Pkt,
-	_Client, #tg_state{bot_id = BotId, rooms = Rooms, component = ComponentJid} = State) ->
+	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid} = State) ->
 	?dbg("presence available: ~p", [Pkt]),
 	case {jid:encode(To), xmpp:get_subtag(Pkt, #muc_user{})} of
 		{ComponentJid, #muc_user{items = [#muc_item{jid = To}]}} ->
@@ -132,8 +134,7 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 			case lists:keyfind(CurMucJid, #muc_state.muc_jid, Rooms) of
 				#muc_state{state = {_, S}} = MucState ->
 					NewRooms = lists:keyreplace(CurMucJid, #muc_state.muc_jid, Rooms, MucState#muc_state{state = {in, S}}),
-					?dbg("msg state in ~p = ~p", [BotId, State#tg_state{rooms = NewRooms}]),
-					{ok, State#tg_state{rooms = NewRooms}};
+					{ok, State#{rooms => NewRooms}};
 				_ ->
 					?dbg("user not found in ~p: ~p in ~p", [BotId, CurMucJid, State]),
 					{ok, State}
@@ -141,7 +142,7 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 		_ ->
 			{ok, State}
 	end;
-process_stanza(#message{} = Pkt, Client, #tg_state{} = State) ->
+process_stanza(#message{} = Pkt, Client, #{} = State) ->
 	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, State, Client], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
@@ -151,28 +152,28 @@ process_stanza(Stanza, _Client, State) ->
 
 %% callbacks for ebridgebot:tag_decorator
 process_stanza(#ps_event{items = #ps_items{node = ?NS_MUCSUB_NODES_MESSAGES, items = [#ps_item{sub_els = [#xmlel{name = <<"message">>} = Pkt]}]}},
-	[#message{type = normal, from = #jid{resource = <<>>}, to = #jid{resource = <<>>}}, #tg_state{} = State, Client]) -> %% event message if subscribed
+	[#message{type = normal, from = #jid{resource = <<>>}, to = #jid{resource = <<>>}}, #{} = State, Client]) -> %% event message if subscribed
 	ct:print("handle event sub message: ~p", [Pkt]),
 	process_stanza(Pkt,  Client, State);
-process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #tg_state{} = State | _]) ->
+process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #{} = State | _]) ->
 	ct:print("handle event message: ~p", [Event]),
 	%% TODO not implemented
 	{ok, State};
 process_stanza(_, [#message{type = groupchat, from = #jid{resource = ComponentNick}} = Pkt,
-	#tg_state{nick = ComponentNick} = State | _]) -> %% ignore echo messages from xmpp client
+	#{nick := ComponentNick} = State | _]) -> %% ignore echo messages from xmpp client
 	ct:print("handle message: ~p", [Pkt]),
 	{ok, State};
-process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #tg_state{bot_id = BotId} = State | _]) ->
+process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{bot_id := BotId} = State | _]) ->
 	case index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
 		[_ | _] -> {ok, State}; %% not send to tg if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
 process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State | _]) ->
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("replace msg to tg: ~p", [Pkt]),
 	[case index_read(BotId, ReplaceId, #xmpp_link.xmpp_id) of
-		[#xmpp_link{uid = Uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
+		 [#xmpp_link{uid = Uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
 			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 			 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>}),
 			 write_link(BotId, OriginId, Uid);
@@ -180,7 +181,7 @@ process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type = groupchat, from = From} = Pkt,
-	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State | _]) -> %% retract message from tg chat
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms} = State | _]) -> %% retract message from tg chat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("retract msg to tg: ~p", [Pkt]),
 	[case index_read(BotId, RetractId, #xmpp_link.xmpp_id) of
@@ -192,22 +193,22 @@ process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type
 		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
-process_stanza(_, [#message{} = Pkt, #tg_state{} = State | _]) ->
+process_stanza(_, [#message{} = Pkt, #{} = State | _]) ->
 	ct:print("unexpected msg to tg: ~p", [Pkt]),
 	{ok, State}.
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State | _]) ->
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("sent to tg: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	[case pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>}) of
 		 {ok, #{<<"message_id">> := Id}} ->
-		    write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id});
+			 write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id});
 		 Err ->
 			 ct:print("ERROR: ~p", [Err])
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
-process_stanza([#message{} = Pkt, #tg_state{} = State | _]) ->
+process_stanza([#message{} = Pkt, #{} = State | _]) ->
 	ct:print("group msg to tg: ~p\n~p", [Pkt, State]),
 	{ok, State}.
 

@@ -1,11 +1,3 @@
-%%%-------------------------------------------------------------------
-%%% @author cryoflamer
-%%% @copyright (C) 2023, <COMPANY>
-%%% @doc
-%%%
-%%% @end
-%%% Created : 08. Mar 2023 11:35 AM
-%%%-------------------------------------------------------------------
 -module(ebridgebot_tg_SUITE).
 -author("cryoflamer").
 -compile(export_all).
@@ -64,21 +56,21 @@ muc_story(Config) ->
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
 	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
-	#tg_state{bot_id = BotId, rooms = []} = ebridgebot_tg_component:state(Pid),
+	#{bot_id := BotId, rooms := []} = ebridgebot_tg_component:state(Pid),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 1),
 			Pid ! {link_rooms, ChatId, RoomJid},
-			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
+			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
 
 			Pid ! enter_linked_rooms,
-			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
+			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
 			escalus_client:wait_for_stanzas(Alice, 1),
 
-			#tg_state{bot_id = BotId, rooms = [#muc_state{state = {in, _}}]} =
+			#{bot_id := BotId, rooms := [#muc_state{state = {in, _}}]} =
 				wait_for_result(fun() -> ebridgebot_tg_component:state(Pid) end,
-					fun(#tg_state{rooms = [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
+					fun(#{rooms := [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
 
 			AliceMsg = <<"Hi, bot!">>, AliceMsg2 = <<"Hi, bot! Edited">>,
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
@@ -124,19 +116,19 @@ subscribe_muc_story(Config) ->
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
 	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
-	#tg_state{bot_id = BotId, rooms = []} = ebridgebot_tg_component:state(Pid),
+	#{bot_id := BotId, rooms := []} = ebridgebot_tg_component:state(Pid),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 1),
 
 			Pid ! {link_rooms, ChatId, RoomJid},
-			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
+			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
 
 			Pid ! sub_linked_rooms,
-			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
+			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
 				wait_for_result(fun() -> ebridgebot_tg_component:state(Pid) end,
-					fun(#tg_state{rooms = [#muc_state{state = {_, subscribed}}]}) -> true; (_) -> false end),
+					fun(#{rooms := [#muc_state{state = {_, subscribed}}]}) -> true; (_) -> false end),
 
 			AliceMsg = <<"Hi, bot!">>, _AliceMsg2 = <<"Hi, bot! Edited">>,
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
