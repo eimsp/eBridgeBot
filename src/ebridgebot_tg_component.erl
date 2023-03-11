@@ -54,7 +54,7 @@ handle_info({pe4kin_update, BotName,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
 	ct:print("edit tg msg groupchat: ~p", [TgMsg]),
-	[case get_replace_id(#tg_id{chat_id = ChatId, id = Id}, BotId) of
+	[case get_linked_id(#tg_id{chat_id = ChatId, id = Id}, BotId) of
 		 [] -> ok;
 		 ReplaceId ->
 			 Pkt = #message{id = OriginId} = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
@@ -171,7 +171,7 @@ process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("replace msg to tg: ~p", [Pkt]),
-	[case get_replace_id(ReplaceId, {ChatId, BotId}) of
+	[case get_linked_id(ReplaceId, {ChatId, BotId}) of
 		 [] -> ok;
 		 Id ->
 			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
@@ -183,7 +183,7 @@ process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State | _]) -> %% retract message from tg chat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("retract msg to tg: ~p", [Pkt]),
-	[case get_replace_id(RetractId, {ChatId, BotId}) of
+	[case get_linked_id(RetractId, {ChatId, BotId}) of
 		 [] -> ok;
 		 Id ->
 			 pe4kin:delete_message(BotName, #{chat_id => ChatId, message_id => Id}),
@@ -265,13 +265,13 @@ write_link(BotId, OriginId, ChatId, Id) ->
 	mnesia:dirty_write(
 		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
 
-get_replace_id(#tg_id{} = TgId, BotId) ->
+get_linked_id(#tg_id{} = TgId, BotId) ->
 	case index_read(BotId, TgId, #xmpp_link.uid) of
 		[#xmpp_link{xmpp_id = OriginId} | _] ->
 			OriginId;
 		_ -> []
 	end;
-get_replace_id(OriginId, {ChatId, BotId}) when is_binary(OriginId) ->
+get_linked_id(OriginId, {ChatId, BotId}) when is_binary(OriginId) ->
 	case index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
 		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
 			Id;
