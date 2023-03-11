@@ -24,9 +24,6 @@
 -import(ebridgebot_component_SUITE, [get_property/2, enter_room/3]).
 -import(ebridgebot, [wait_for_result/2, wait_for_result/4, wait_for_list/1, wait_for_list/2]).
 
--define(BOT_ID, test_tg_bot).
--define(NICK, atom_to_binary(?BOT_ID)).
-
 all() ->
 	[{group, main}].
 
@@ -44,18 +41,15 @@ end_per_suite(Config) ->
 	escalus:end_per_suite(Config).
 
 init_per_testcase(CaseName, Config) ->
-	Args = [{bot_id, ?BOT_ID},
+	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
+	Args = [{bot_id, BotId},
 		{component, escalus_ct:get_config(ejabberd_service)},
-		{name, <<"ebridge_bot">>}, %% TODO change for test name and insert meck
 		{host, escalus_ct:get_config(ejabberd_addr)},
-		{nick, ?NICK},
 		{password, escalus_ct:get_config(ejabberd_service_password)},
-		{module, ebridgebot_tg_component}, %% TODO set ebridgebot_tg module in future
 		{port, escalus_ct:get_config(ejabberd_service_port)},
-		{token, <<"6066841531:AAEK0aUdaP6eoJWcS0020VOyYQpNhhMpBPE">>}, %% TODO set fake token in future by meck
-		{linked_rooms, []}],
-	{ok, Pid} = escalus_component:start({local, get_property(bot_id, Args)}, get_property(module, Args), Args, Args),
-	ebridgebot_component_SUITE:init_per_testcase(CaseName, Args ++ [{component_pid, Pid} | escalus:init_per_suite(Config)]).
+		{linked_rooms, []}] ++ BotArgs,
+	{ok, Pid} = escalus_component:start({local, BotId}, get_property(module, BotArgs), Args, Args),
+	ebridgebot_component_SUITE:init_per_testcase(CaseName, [{component_pid, Pid} | Args ++ Config]).
 
 
 end_per_testcase(CaseName, Config) ->
