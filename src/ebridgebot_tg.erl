@@ -22,7 +22,7 @@ handle_info({pe4kin_update, BotName,
 		<<"message_id">> := Id,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
-	ct:print("tg msg groupchat: ~p", [TgMsg]),
+	?dbg("tg msg groupchat: ~p", [TgMsg]),
 	[begin
 		 OriginId = ebridgebot:gen_uuid(),
 		 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
@@ -38,7 +38,7 @@ handle_info({pe4kin_update, BotName,
 		<<"message_id">> := Id,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
-	ct:print("edit tg msg groupchat: ~p", [TgMsg]),
+	?dbg("edit tg msg groupchat: ~p", [TgMsg]),
 	[case ebridgebot_component:index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
 		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
 			 Pkt = #message{id = OriginId} = ebridgebot_component:edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
@@ -48,17 +48,17 @@ handle_info({pe4kin_update, BotName,
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	ct:print("tg msg: ~p", [TgMsg]),
+	?dbg("tg msg: ~p", [TgMsg]),
 	{ok, State};
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	ct:print("tg msg2: ~p", [TgMsg]),
+	?dbg("tg msg2: ~p", [TgMsg]),
 	{ok, State};
 handle_info({pe4kin_send, ChatId, Text}, _Client, #{bot_name := BotName} = State) ->
 	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
-	ct:print("pe4kin_send: ~p", [Res]),
+	?dbg("pe4kin_send: ~p", [Res]),
 	{ok, State};
 handle_info(Info, _Client, State) ->
-	ct:print("handle component: ~p", [Info]),
+	?dbg("handle component: ~p", [Info]),
 	{ok, State}.
 
 send_message(#{bot_name := BotName, chat_id := ChatId}, Text) ->
@@ -66,7 +66,7 @@ send_message(#{bot_name := BotName, chat_id := ChatId}, Text) ->
 		{ok, #{<<"message_id">> := Id}} ->
 			{ok, #tg_id{chat_id = ChatId, id = Id}};
 		Err ->
-			ct:print("ERROR: send_message: ~p", [Err]),
+			?dbg("ERROR: send_message: ~p", [Err]),
 			Err
 	end.
 
@@ -75,7 +75,7 @@ edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id}}, T
 		{ok, _} ->
 			{ok, #tg_id{chat_id = ChatId, id = Id}};
 		Err ->
-			ct:print("ERROR: : edit_message: ~p", [Err]),
+			?dbg("ERROR: : edit_message: ~p", [Err]),
 			Err
 	end.
 
@@ -84,7 +84,7 @@ delete_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id}})
 		{ok, true} ->
 			{ok, #tg_id{chat_id = ChatId, id = Id}};
 		Err ->
-			ct:print("ERROR: ~p", [Err]),
+			?dbg("ERROR: ~p", [Err]),
 			Err
 	end.
 
