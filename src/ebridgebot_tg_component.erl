@@ -163,7 +163,7 @@ process_stanza(_, [#message{type = groupchat, from = #jid{resource = ComponentNi
 	ct:print("handle message: ~p", [Pkt]),
 	{ok, State};
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #tg_state{bot_id = BotId} = State | _]) ->
-	case dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
+	case index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
 		[_ | _] -> {ok, State}; %% not send to tg if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
@@ -188,7 +188,7 @@ process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type
 		 Id ->
 			 pe4kin:delete_message(BotName, #{chat_id => ChatId, message_id => Id}),
 			 Table = bot_table(BotId),
-			 Links = dirty_index_read(BotId, #tg_id{id = Id, chat_id = ChatId}, #xmpp_link.uid),
+			 Links = index_read(BotId, #tg_id{id = Id, chat_id = ChatId}, #xmpp_link.uid),
 			 [mnesia:dirty_delete(Table, Time) || #xmpp_link{time = Time} <- Links]
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
@@ -266,17 +266,17 @@ write_link(BotId, OriginId, ChatId, Id) ->
 		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
 
 get_replace_id(#tg_id{} = TgId, BotId) ->
-	case dirty_index_read(BotId, TgId, #xmpp_link.uid) of
+	case index_read(BotId, TgId, #xmpp_link.uid) of
 		[#xmpp_link{xmpp_id = OriginId} | _] ->
 			OriginId;
 		_ -> []
 	end;
 get_replace_id(OriginId, {ChatId, BotId}) when is_binary(OriginId) ->
-	case dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
+	case index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
 		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
 			Id;
 		_ -> []
 	end.
 
-dirty_index_read(BotId, Key, Field) ->
+index_read(BotId, Key, Field) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(bot_table(BotId), Key, Field)].

@@ -86,7 +86,7 @@ muc_story(Config) ->
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)) end, 1),
 			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}] =
-				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
+				wait_for_list(fun() -> ebridgebot_tg_component:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
 
 			AlicePkt2 = #message{type = groupchat, to = RoomJID = jid:decode(RoomJid), body = [#text{data = AliceMsg2}], %% edit message from xmpp
 				sub_els = [#replace{id = OriginId}, #origin_id{id = OriginId2 = ebridgebot:gen_uuid()}]},
@@ -94,13 +94,13 @@ muc_story(Config) ->
 			escalus:assert(is_groupchat_message, [AliceMsg2], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{chat_id = ChatId, id = MessageId}}, %% add edit link to bot link table
 				#xmpp_link{xmpp_id = OriginId2, uid = TgUid = #tg_id{}}] =
-				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
+				wait_for_list(fun() -> ebridgebot_tg_component:index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
 
 			AliceRetractPkt = #message{type = groupchat, to = RoomJID, %% retract from xmpp client
 				sub_els = [#origin_id{id = ebridgebot:gen_uuid()}, #apply_to{id = OriginId2, sub_els = [#retract{}]}]},
 			escalus:send(Alice, xmpp:encode(AliceRetractPkt)),
 			#apply_to{id = OriginId2} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #apply_to{}),
-			[] = wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid, #xmpp_link.uid) end),
+			[] = wait_for_list(fun() -> ebridgebot_tg_component:index_read(BotId, TgUid, #xmpp_link.uid) end),
 			[] = mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)),
 
 			TgAliceMsg = <<"Hello from telegram!">>, TgAliceMsg2 = <<"2: Hello from telegram!">>,
@@ -108,13 +108,13 @@ muc_story(Config) ->
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId +1},
 			[#xmpp_link{uid = TgUid2}] =
-				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
+				wait_for_list(fun() -> ebridgebot_tg_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
 
 			%% emulate editing message from Telegram
 			Pid ! {pe4kin_update, BotName, tg_message(<<"edited_message">>, ChatId, MessageId + 1, AliceNick, TgAliceMsg2)},
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
-				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
+				wait_for_list(fun() -> ebridgebot_tg_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
 			ok
 		end).
 
@@ -144,14 +144,14 @@ subscribe_muc_story(Config) ->
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)) end, 1),
 			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{id = MessageId}}] =
-				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
+				wait_for_list(fun() -> ebridgebot_tg_component:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
 
 			TgAliceMsg = <<"Hello from telegram!">>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2}] =
-				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
+				wait_for_list(fun() -> ebridgebot_tg_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
 			ok
 		end).
 
