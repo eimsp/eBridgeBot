@@ -28,7 +28,7 @@ all() ->
 	[{group, main}].
 
 groups() ->
-	MainStories = [muc_story],
+	MainStories = [muc_story, subscribe_muc_story],
 	[{main, [sequence], MainStories}, {local, [sequence], MainStories}].
 
 init_per_suite(Config) ->
@@ -63,8 +63,7 @@ muc_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, _Component, BotName] = [
-		get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	#tg_state{bot_id = BotId, rooms = []} = ebridgebot_tg_component:state(Pid),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
@@ -116,6 +115,28 @@ muc_story(Config) ->
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
+			ok
+		end).
+
+subscribe_muc_story(Config) ->
+	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
+	MucHost = escalus_config:get_ct(muc_host),
+	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
+	[BotId, Pid, _Component, _BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	#tg_state{bot_id = BotId, rooms = []} = ebridgebot_tg_component:state(Pid),
+	escalus:story(Config, [{alice, 1}],
+		fun(#client{jid = _AliceJid} = Alice) ->
+			enter_room(Alice, RoomJid, AliceNick),
+			escalus_client:wait_for_stanzas(Alice, 1),
+
+			Pid ! {link_rooms, ChatId, RoomJid},
+			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
+
+			Pid ! sub_linked_rooms,
+			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
+				wait_for_result(fun() -> ebridgebot_tg_component:state(Pid) end,
+					fun(#tg_state{rooms = [#muc_state{state = {_, subscribed}}]}) -> true; (_) -> false end),
 			ok
 		end).
 
