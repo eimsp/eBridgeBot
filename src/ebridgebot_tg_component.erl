@@ -141,9 +141,8 @@ process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} =
 		_ ->
 			{ok, State}
 	end;
-process_stanza(#message{type = groupchat, from = #jid{resource = Nick}} = Pkt, _Client,
-				#tg_state{nick = ComponentNick} = State) when Nick /= ComponentNick ->
-	(ebridgebot:tag_decorator([#replace{}, #apply_to{}, #origin_id{}], [Pkt, State], ?MODULE, process_stanza))();
+process_stanza(#message{} = Pkt, _Client, #tg_state{} = State) ->
+	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, State], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
@@ -151,6 +150,17 @@ process_stanza(Stanza, _Client, State) ->
 	{ok, State}.
 
 %% callbacks for ebridgebot:tag_decorator
+process_stanza(#ps_event{items = #ps_items{node = ?NS_MUCSUB_NODES_MESSAGES, items = [#ps_item{sub_els = [#xmlel{name = <<"message">>} = Pkt]}]}},
+	[#message{type = normal, from = #jid{resource = <<>>}, to = #jid{resource = <<>>}}, #tg_state{} = State]) ->
+	ct:print("handle event sub message: ~p", [Pkt]),
+	process_stanza([xmpp:decode(Pkt), State]);
+process_stanza(#ps_event{} = Event,	[#message{} = Pkt, #tg_state{} = State]) ->
+	ct:print("handle event message: ~p", [Event]),
+	{ok, State};
+process_stanza(_, [#message{type = groupchat, from = #jid{resource = ComponentNick}} = Pkt,
+	#tg_state{nick = ComponentNick} = State]) -> %% ignore echo messages from xmpp client
+	ct:print("handle message: ~p", [Pkt]),
+	{ok, State};
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #tg_state{bot_id = BotId} = State]) ->
 	case dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
 		[_ | _] -> {ok, State}; %% not send to tg if messages already linked
@@ -187,7 +197,7 @@ process_stanza(_, [#message{} = Pkt, #tg_state{} = State]) ->
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms} = State]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
-	ct:print("group msg to tg: ~p", [Pkt]),
+	ct:print("sent to tg: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	[case pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>}) of
 		 {ok, #{<<"message_id">> := Id}} ->
@@ -197,7 +207,7 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza([#message{} = Pkt, #tg_state{} = State]) ->
-	ct:print("group msg to tg: 2: ~p\n~p", [Pkt, State]),
+	ct:print("group msg to tg: ~p\n~p", [Pkt, State]),
 	{ok, State}.
 
 terminate(Reason, State) ->
