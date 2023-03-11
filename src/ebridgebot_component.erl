@@ -78,8 +78,6 @@ handle_info(Info, _Client, State) ->
 	ct:print("handle component: ~p", [Info]),
 	{ok, State}.
 
-%%	{ok, State}.
-
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
 process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} = Pkt,
@@ -126,27 +124,28 @@ process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{b
 		[] -> process_stanza([Pkt, State])
 	end;
 process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms} = State | _]) ->
+	#{bot_id := BotId, rooms := Rooms, module := Module} = State | _]) -> %% edit message from xmpp groupchat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("replace msg to tg: ~p", [Pkt]),
-	[case index_read(BotId, ReplaceId, #xmpp_link.xmpp_id) of
-		 [#xmpp_link{uid = Uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
+	Links = index_read(BotId, ReplaceId, #xmpp_link.xmpp_id),
+	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
+		 [#xmpp_link{uid = Uid} | _] ->
 			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-			 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>}),
+			 Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
 			 write_link(BotId, OriginId, Uid);
 		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type = groupchat, from = From} = Pkt,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms} = State | _]) -> %% retract message from tg chat
+	#{bot_id := BotId, rooms := Rooms, module := Module} = State | _]) -> %% retract message from tg chat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("retract msg to tg: ~p", [Pkt]),
-	[case index_read(BotId, RetractId, #xmpp_link.xmpp_id) of
-		 [#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
-			 pe4kin:delete_message(BotName, #{chat_id => ChatId, message_id => Id}),
+	Links = index_read(BotId, RetractId, #xmpp_link.xmpp_id), %% TODO combine edit and retract
+	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
+		 [#xmpp_link{uid = Uid } | _] ->
+			 Module:delete_message(State#{uid => Uid}),
 			 Table = bot_table(BotId),
-			 Links = index_read(BotId, #tg_id{id = Id, chat_id = ChatId}, #xmpp_link.uid),
-			 [mnesia:dirty_delete(Table, Time) || #xmpp_link{time = Time} <- Links];
+			 [mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- index_read(BotId, Uid, #xmpp_link.uid)];
 		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
