@@ -12,12 +12,12 @@ bot_table(BotId) -> %% generate table name for bot
 
 init(Args) ->
 	application:ensure_all_started(pe4kin),
-	[BotId, BotName, BotToken, Component, Nick, Token, Rooms] =
+	[BotId, BotName, BotToken, Component, Nick, Rooms] =
 		[proplists:get_value(K, Args) ||
-		 K <- [bot_id, name, token, component, nick, token, linked_rooms]], %% TODO unused params need remove in future
+			K <- [bot_id, name, token, component, nick, linked_rooms]],
 	pe4kin:launch_bot(BotName, BotToken, #{receiver => true}),
 	pe4kin_receiver:subscribe(BotName, self()),
-	pe4kin_receiver:start_http_poll(BotName, #{limit=>100, timeout=>60}),
+	pe4kin_receiver:start_http_poll(BotName, #{limit => 100, timeout => 60}),
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
 %%	self() ! sub_linked_rooms, %% subscribe to all linked rooms %% TODO to think about subscribe and structure of #muc_state.state
 	self() ! enter_linked_rooms, %% enter to all linked rooms
@@ -28,7 +28,7 @@ init(Args) ->
 			{index, [xmpp_id, uid]},
 			{disc_copies, [node()]}]),
 
-	{ok, #tg_state{bot_id = BotId, bot_name = BotName, component = Component, nick = Nick, token = Token, rooms = NewRooms}}.
+	{ok, #tg_state{bot_id = BotId, bot_name = BotName, component = Component, nick = Nick, token = BotToken, rooms = NewRooms}}.
 
 %% Function that handles information message received from the group chat of Telegram
 handle_info({pe4kin_update, BotName,
