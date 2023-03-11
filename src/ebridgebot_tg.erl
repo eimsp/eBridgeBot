@@ -1,11 +1,11 @@
 -module(ebridgebot_tg).
 
 %% API
--compile(export_all).
-
 -include_lib("xmpp/include/xmpp.hrl").
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
+
+-export([init/1, handle_info/3, send_message/2, edit_message/2, delete_message/1, link_pred/1]).
 
 init(Args) ->
 	application:ensure_all_started(pe4kin),
