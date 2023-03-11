@@ -42,7 +42,7 @@ handle_info({pe4kin_update, BotName,
 			 OriginId = ebridgebot:gen_uuid(),
 			 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
 				 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-			 write_link(BotId, OriginId, ChatId, Id)
+			 write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
 		 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 			CurChatId == ChatId andalso (E == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
 	{ok, State};
@@ -54,11 +54,11 @@ handle_info({pe4kin_update, BotName,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#tg_state{bot_id = BotId, bot_name = BotName, rooms = Rooms, component = Component} = State) ->
 	ct:print("edit tg msg groupchat: ~p", [TgMsg]),
-	[case index_read(BotId, #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
+	[case index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
 		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
 			 Pkt = #message{id = OriginId} = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
 			 escalus:send(Client, xmpp:encode(Pkt)),
-			 write_link(BotId, OriginId, ChatId, Id); %% TODO maybe you don't need to write because there is no retract from Telegram
+			 write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
 	    _ -> ok
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
@@ -172,10 +172,10 @@ process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("replace msg to tg: ~p", [Pkt]),
 	[case index_read(BotId, ReplaceId, #xmpp_link.xmpp_id) of
-		[#xmpp_link{uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
+		[#xmpp_link{uid = Uid = #tg_id{chat_id = ChatId, id = Id}} | _] ->
 			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 			 pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>}),
-			 write_link(BotId, OriginId, ChatId, Id);
+			 write_link(BotId, OriginId, Uid);
 		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
@@ -202,7 +202,7 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	[case pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>}) of
 		 {ok, #{<<"message_id">> := Id}} ->
-		    write_link(BotId, OriginId, ChatId, Id);
+		    write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id});
 		 Err ->
 			 ct:print("ERROR: ~p", [Err])
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
@@ -261,9 +261,9 @@ edit_msg(From, To, Text, ReplaceId) ->
 subscribe_component(BotId, MucJid) ->
 	pid(BotId) ! {subscribe_component, MucJid}.
 
-write_link(BotId, OriginId, ChatId, Id) ->
+write_link(BotId, OriginId, Uid) ->
 	mnesia:dirty_write(
-		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = #tg_id{id = Id, chat_id = ChatId}}, bot_table(BotId))).
+		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = Uid}, bot_table(BotId))).
 
 index_read(BotId, Key, Field) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(bot_table(BotId), Key, Field)].
