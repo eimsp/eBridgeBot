@@ -27,49 +27,6 @@ init(Args) ->
 	{ok, State} = Module:init(Args),
 	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module}}.
 
-%% Function that handles information message received from the group chat of Telegram
-handle_info({pe4kin_update, BotName,
-	#{<<"message">> :=
-	#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
-		<<"from">> := #{<<"username">> := TgUserName},
-		<<"message_id">> := Id,
-		<<"text">> := Text}}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
-	ct:print("tg msg groupchat: ~p", [TgMsg]),
-	[begin
-		 OriginId = ebridgebot:gen_uuid(),
-		 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
-			 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-		 write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
-	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
-		CurChatId == ChatId andalso (E == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
-	{ok, State};
-handle_info({pe4kin_update, BotName,
-	#{<<"edited_message">> :=
-	#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
-		<<"from">> := #{<<"username">> := TgUserName},
-		<<"message_id">> := Id,
-		<<"text">> := Text}}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
-	ct:print("edit tg msg groupchat: ~p", [TgMsg]),
-	[case index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
-		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
-			 Pkt = #message{id = OriginId} = edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
-			 escalus:send(Client, xmpp:encode(Pkt)),
-			 write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
-		 _ -> ok
-	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
-	{ok, State};
-handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	ct:print("tg msg: ~p", [TgMsg]),
-	{ok, State};
-handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	ct:print("tg msg2: ~p", [TgMsg]),
-	{ok, State};
-handle_info({pe4kin_send, ChatId, Text}, _Client, #{bot_name := BotName} = State) ->
-	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
-	ct:print("pe4kin_send: ~p", [Res]),
-	{ok, State};
 handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
 	NewRooms =
@@ -115,9 +72,13 @@ handle_info(sub_linked_rooms, Client, #{rooms := Rooms} = State) ->
 handle_info({state, Pid}, _Client, State) ->
 	Pid ! {state, State},
 	{ok, State};
+handle_info(Info, Client, #{module := Module} = State) ->
+	Module:handle_info(Info, Client, State);
 handle_info(Info, _Client, State) ->
 	ct:print("handle component: ~p", [Info]),
 	{ok, State}.
+
+%%	{ok, State}.
 
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
@@ -193,15 +154,13 @@ process_stanza(_, [#message{} = Pkt, #{} = State | _]) ->
 	ct:print("unexpected msg to tg: ~p", [Pkt]),
 	{ok, State}.
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms} = State | _]) ->
+	#{bot_id := BotId, rooms := Rooms, module := Module} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	ct:print("sent to tg: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-	[case pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>}) of
-		 {ok, #{<<"message_id">> := Id}} ->
-			 write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id});
-		 Err ->
-			 ct:print("ERROR: ~p", [Err])
+	[case Module:send_message(State#{chat_id => ChatId}, <<Nick/binary, ":\n", Text/binary>>) of
+		 {ok, Uid} -> write_link(BotId, OriginId, Uid);
+		 Err -> Err
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza([#message{} = Pkt, #{} = State | _]) ->
