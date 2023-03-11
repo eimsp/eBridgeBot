@@ -137,6 +137,14 @@ subscribe_muc_story(Config) ->
 			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
 				wait_for_result(fun() -> ebridgebot_tg_component:state(Pid) end,
 					fun(#tg_state{rooms = [#muc_state{state = {_, subscribed}}]}) -> true; (_) -> false end),
+
+			AliceMsg = <<"Hi, bot!">>, AliceMsg2 = <<"Hi, bot! Edited">>,
+			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
+			escalus:send(Alice, xmpp:encode(AlicePkt)),
+			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
+			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot_tg_component:bot_table(BotId)) end, 1),
+			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot_tg_component:dirty_index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
 			ok
 		end).
 
