@@ -5,7 +5,6 @@
 
 -include_lib("xmpp/include/xmpp.hrl").
 -include("ebridgebot.hrl").
--include("ebridgebot_tg.hrl").
 
 -export([init/1, handle_info/3, process_stanza/3, terminate/2]).
 
