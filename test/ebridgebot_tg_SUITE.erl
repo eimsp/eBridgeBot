@@ -77,15 +77,15 @@ muc_story(Config) ->
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 1),
 			Pid ! {link_rooms, ChatId, RoomJid},
-			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = out}]} = ebridgebot_tg_component:state(Pid),
+			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
 
 			Pid ! enter_linked_rooms,
-			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = pending}]} = ebridgebot_tg_component:state(Pid),
+			#tg_state{bot_id = BotId, rooms = [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_tg_component:state(Pid),
 			escalus_client:wait_for_stanzas(Alice, 1),
 
-			#tg_state{bot_id = BotId, rooms = [#muc_state{state = in}]} =
+			#tg_state{bot_id = BotId, rooms = [#muc_state{state = {in, _}}]} =
 				wait_for_result(fun() -> ebridgebot_tg_component:state(Pid) end,
-					fun(#tg_state{rooms = [#muc_state{state = in}]}) -> true; (_) -> false end),
+					fun(#tg_state{rooms = [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
 
 			AliceMsg = <<"Hi, bot!">>, AliceMsg2 = <<"Hi, bot! Edited">>,
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
