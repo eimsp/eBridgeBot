@@ -37,8 +37,15 @@ groups() ->
 init_per_suite(Config) ->
 	[escalus:Fun([{escalus_user_db, {module, escalus_ejabberd}} | Config], escalus_users:get_users([alice])) || Fun <- [delete_users, create_users]],
 	application:stop(ebridgebot),
+	escalus:init_per_suite(Config).
+
+end_per_suite(Config) ->
+	application:start(ebridgebot),
+	escalus:end_per_suite(Config).
+
+init_per_testcase(CaseName, Config) ->
 	Args = [{bot_id, ?BOT_ID},
-		{component, escalus_ct:get_config(ejabberd_service)}, %% TODO move to test.config
+		{component, escalus_ct:get_config(ejabberd_service)},
 		{name, <<"ebridge_bot">>}, %% TODO change for test name and insert meck
 		{host, escalus_ct:get_config(ejabberd_addr)},
 		{nick, ?NICK},
@@ -48,19 +55,12 @@ init_per_suite(Config) ->
 		{token, <<"6066841531:AAEK0aUdaP6eoJWcS0020VOyYQpNhhMpBPE">>}, %% TODO set fake token in future by meck
 		{linked_rooms, []}],
 	{ok, Pid} = escalus_component:start({local, get_property(bot_id, Args)}, get_property(module, Args), Args, Args),
-	Args ++ [{component_pid, Pid} | escalus:init_per_suite(Config)].
-
-end_per_suite(Config) ->
-	ok = ebridgebot_tg_component:stop(get_property(component_pid, Config)),
-	application:start(ebridgebot),
-	escalus:end_per_suite(Config).
-
-init_per_testcase(CaseName, Config) ->
-	ebridgebot_component_SUITE:init_per_testcase(CaseName, Config).
+	ebridgebot_component_SUITE:init_per_testcase(CaseName, Args ++ [{component_pid, Pid} | escalus:init_per_suite(Config)]).
 
 
 end_per_testcase(CaseName, Config) ->
 	BotId = get_property(bot_id, Config),
+	ok = ebridgebot_tg_component:stop(get_property(component_pid, Config)),
 	{ok, atomic} = mnesia:delete_table(ebridgebot_tg_component:bot_table(BotId)),
 	escalus:end_per_testcase(CaseName, Config).
 

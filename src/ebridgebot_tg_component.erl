@@ -19,7 +19,6 @@ init(Args) ->
 	pe4kin_receiver:subscribe(BotName, self()),
 	pe4kin_receiver:start_http_poll(BotName, #{limit => 100, timeout => 60}),
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
-%%	self() ! sub_linked_rooms, %% subscribe to all linked rooms %% TODO to think about subscribe and structure of #muc_state.state
 	self() ! enter_linked_rooms, %% enter to all linked rooms
 
 	application:start(mnesia),
