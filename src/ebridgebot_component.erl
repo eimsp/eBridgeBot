@@ -119,29 +119,29 @@ process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{b
 		[_ | _] -> {ok, State}; %% not send to tg if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
-process_stanza(#replace{id = ReplaceId}, [#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module} = State | _]) -> %% edit message from xmpp groupchat
+process_stanza(#replace{}, [#message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
+	#{bot_id := BotId, module := Module, uid := Uid} = State | _]) -> %% edit message from xmpp groupchat with uid
+	?dbg("replace: ~p", [Pkt]),
+	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
+	Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
+	write_link(BotId, OriginId, Uid),
+	{ok, State};
+process_stanza(#apply_to{sub_els = [#retract{}]}, [#message{type = groupchat} = Pkt,
+	#{bot_id := BotId, module := Module, uid := Uid} = State | _]) -> %% retract message from xmpp groupchat
+	?dbg("retract: ~p", [Pkt]),
+	Module:delete_message(State#{uid => Uid}),
+	Table = ebridgebot:bot_table(BotId),
+	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- index_read(BotId, Uid, #xmpp_link.uid)],
+	{ok, State};
+process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | T])
+	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edit message from xmpp groupchat
 	MucFrom = jid:encode(jid:remove_resource(From)),
-	?dbg("replace msg to tg: ~p", [Pkt]),
-	Links = index_read(BotId, ReplaceId, #xmpp_link.xmpp_id),
+	?dbg("replace or retract msg to not xnpp client: ~p", [Pkt]),
+	OriginId = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
+	Links = index_read(BotId, OriginId, #xmpp_link.xmpp_id),
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid} | _] ->
-			 #origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-			 Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
-			 write_link(BotId, OriginId, Uid);
-		 _ -> ok
-	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
-	{ok, State};
-process_stanza(#apply_to{id = RetractId, sub_els = [#retract{}]}, [#message{type = groupchat, from = From} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module} = State | _]) -> %% retract message from tg chat
-	MucFrom = jid:encode(jid:remove_resource(From)),
-	?dbg("retract msg to tg: ~p", [Pkt]),
-	Links = index_read(BotId, RetractId, #xmpp_link.xmpp_id), %% TODO combine edit and retract
-	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
-		 [#xmpp_link{uid = Uid } | _] ->
-			 Module:delete_message(State#{uid => Uid}),
-			 Table = ebridgebot:bot_table(BotId),
-			 [mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- index_read(BotId, Uid, #xmpp_link.uid)];
+			 process_stanza(Tag, [Pkt, State#{uid => Uid} | T]);
 		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
