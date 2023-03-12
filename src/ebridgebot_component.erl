@@ -119,21 +119,21 @@ process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{b
 		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
-process_stanza(#replace{}, [#message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, module := Module, uid := Uid} = State | _]) -> %% edit message from xmpp groupchat with uid
+process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
+		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
 	write_link(BotId, OriginId, Uid),
 	{ok, State};
-process_stanza(#apply_to{sub_els = [#retract{}]}, [#message{type = groupchat} = Pkt,
-	#{bot_id := BotId, module := Module, uid := Uid} = State | _]) -> %% retract message from xmpp groupchat
+process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
+		#{bot_id := BotId, module := Module} = State | _]) -> %% retract message from xmpp groupchat
 	?dbg("retract: ~p", [Pkt]),
 	Module:delete_message(State#{uid => Uid}),
 	Table = ebridgebot:bot_table(BotId),
 	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- index_read(BotId, Uid, #xmpp_link.uid)],
 	{ok, State};
-process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | T])
+process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | T] = S)
 	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edit message from xmpp groupchat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
@@ -141,7 +141,7 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 	Links = index_read(BotId, OriginId, #xmpp_link.xmpp_id),
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid} | _] ->
-			 process_stanza(Tag, [Pkt, State#{uid => Uid} | T]);
+			 process_stanza(Tag, [{uid, Uid} | S]);
 		 _ -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
