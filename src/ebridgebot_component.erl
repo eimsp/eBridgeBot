@@ -116,7 +116,7 @@ process_stanza(_, [#message{type = groupchat, from = #jid{resource = ComponentNi
 	{ok, State};
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{bot_id := BotId} = State | _]) ->
 	case index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
-		[_ | _] -> {ok, State}; %% not send to tg if messages already linked
+		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
 process_stanza(#replace{}, [#message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
@@ -136,7 +136,7 @@ process_stanza(#apply_to{sub_els = [#retract{}]}, [#message{type = groupchat} = 
 process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | T])
 	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edit message from xmpp groupchat
 	MucFrom = jid:encode(jid:remove_resource(From)),
-	?dbg("replace or retract msg to not xnpp client: ~p", [Pkt]),
+	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
 	OriginId = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
 	Links = index_read(BotId, OriginId, #xmpp_link.xmpp_id),
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
@@ -146,12 +146,12 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(_, [#message{} = Pkt, #{} = State | _]) ->
-	?dbg("unexpected msg to tg: ~p", [Pkt]),
+	?dbg("unexpected msg from xmpp server: ~p", [Pkt]),
 	{ok, State}.
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
 	#{bot_id := BotId, rooms := Rooms, module := Module} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
-	?dbg("sent to tg: ~p", [Pkt]),
+	?dbg("send to third party client: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	[case Module:send_message(State#{chat_id => ChatId}, <<Nick/binary, ":\n", Text/binary>>) of
 		 {ok, Uid} -> write_link(BotId, OriginId, Uid);
@@ -159,11 +159,11 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza([#message{} = Pkt, #{} = State | _]) ->
-	?dbg("group msg to tg: ~p\n~p", [Pkt, State]),
+	?dbg("unhandled message: ~p\n~p", [Pkt, State]),
 	{ok, State}.
 
 terminate(Reason, State) ->
-	?dbg("terminate/2 ~p", [{Reason, State}]),
+	?dbg("terminate/2:\n~p", [{Reason, State}]),
 	ok.
 
 %% component API
