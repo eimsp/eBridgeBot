@@ -41,6 +41,7 @@ init_per_testcase(CaseName, Config) ->
 		{password, escalus_ct:get_config(ejabberd_service_password)},
 		{port, escalus_ct:get_config(ejabberd_service_port)},
 		{linked_rooms, []}] ++ BotArgs,
+%%	mnesia:delete_table(ebridgebot:bot_table(BotId)),
 	{ok, Pid} = escalus_component:start({local, BotId}, ebridgebot_component, Args, Args),
 	[_Host, MucHost, Rooms, Users] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms, escalus_users]],
@@ -59,6 +60,8 @@ init_per_testcase(CaseName, Config) ->
 		 false ->
 			 ChatId = escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, chat_id}),
 			 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
+%%			 catch mod_muc_admin:destroy_room(Room, MucHost),
+%%			 timer:sleep(100),
 			 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
 			 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
 			 Pid ! enter_linked_rooms,
@@ -86,8 +89,19 @@ init_per_testcase(CaseName, Config) ->
 end_per_testcase(CaseName, Config) ->
 	BotId = get_property(bot_id, Config),
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
-	{ok, atomic} = mnesia:delete_table(ebridgebot:bot_table(BotId)),
+	mnesia:delete_table(ebridgebot:bot_table(BotId)),
 	escalus:end_per_testcase(CaseName, Config).
+
+destroy_room(Config) ->
+	[Pid, Component] = [get_property(K, Config) || K <- [component_pid, component]],
+	[Rooms, MucHost] = [escalus_ct:get_config(K) || K <- [ebridgebot_rooms, muc_host]],
+	[begin
+		 RoomNode = get_property(name, Opts),
+		 Iq = #iq{type = set,
+			 from = jid:decode(Component), to = jid:make(RoomNode, MucHost),
+			 sub_els = [#muc_owner{destroy = #muc_destroy{}}]},
+		 escalus_component:send(Pid, xmpp:encode(Iq))
+	 end || {_, Opts} <- Rooms].
 
 muc_story(Config) ->
 	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
@@ -135,31 +149,30 @@ muc_story(Config) ->
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
+			destroy_room(Config),
 			ok
 		end).
 
 subscribe_muc_story(Config) ->
 	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
 	MucHost = escalus_config:get_ct(muc_host),
-	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+	MucJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
-	#{bot_id := BotId, rooms := []} = ebridgebot_component:state(Pid),
+	[BotId, Pid, Component, BotName, Nick] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name, nick]],
 	escalus:story(Config, [{alice, 1}],
-		fun(#client{jid = _AliceJid} = Alice) ->
-			enter_room(Alice, RoomJid, AliceNick),
-			escalus_client:wait_for_stanzas(Alice, 1),
-
-			Pid ! {link_rooms, ChatId, RoomJid},
-			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
-
+		fun(#client{jid = AliceJid} = Alice) ->
+			enter_room(Alice, MucJid, AliceNick),
+			escalus_client:wait_for_stanzas(Alice, 2),
+			UnavailablePresence = presence(unavailable, Component, MucJid, Nick),
+			escalus_component:send(Pid, xmpp:encode(UnavailablePresence)),
+			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			Pid ! sub_linked_rooms,
-			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
+			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {_, subscribed}}]} =
 				wait_for_result(fun() -> ebridgebot_component:state(Pid) end,
 					fun(#{rooms := [#muc_state{state = {_, subscribed}}]}) -> true; (_) -> false end),
 
 			AliceMsg = <<"Hi, bot!">>, _AliceMsg2 = <<"Hi, bot! Edited">>,
-			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
+			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(MucJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 1),
@@ -172,22 +185,10 @@ subscribe_muc_story(Config) ->
 			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
+			destroy_room(Config),
 			ok
 		end).
-%%
-%%muc_story2(Config) ->
-%%	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
-%%	MucHost = escalus_config:get_ct(muc_host),
-%%	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
-%%	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-%%	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
-%%%%	#{bot_id := BotId, rooms := []} = ebridgebot_component:state(Pid),
-%%	escalus:story(Config, [{alice, 1}],
-%%		fun(#client{jid = _AliceJid} = Alice) ->
-%%			enter_room(Alice, RoomJid, AliceNick),
-%%			escalus_client:wait_for_stanzas(Alice, 1),
-%%			ok
-%%			end).
+
 %% tg API
 tg_message(ChatId, MessageId, Username, Text) ->
 	tg_message(<<"message">>, ChatId, MessageId, Username, Text).
@@ -216,6 +217,9 @@ get_property(PropName, Proplist) ->
 		false ->
 			throw({missing_property, PropName})
 	end.
+
+presence(Type, From, To, Nick) when is_binary(From), is_binary(To) ->
+	#presence{type = Type, from = jid:make(From), to = jid:replace_resource(jid:decode(To), Nick), sub_els = [#muc{}]}.
 
 enter_room(Client, RoomJid, Nick) ->
 	escalus:send(Client, enter_groupchat(Client, RoomJid, Nick)),
