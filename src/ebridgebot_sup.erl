@@ -27,6 +27,8 @@ start_link() ->
 %%                  modules => modules()}   % optional
 init([]) ->
     mnesia:create_schema([node()]),
+    DebugInfo = application:get_env(ebridgebot, debug_info, true),
+    xmpp:set_config([{debug, DebugInfo}]),
     SupFlags = #{strategy => one_for_one,
         intensity => 1000,
         period => 3600},
