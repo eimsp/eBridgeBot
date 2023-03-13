@@ -13,7 +13,7 @@ init(Args) ->
 		[proplists:get_value(K, Args) ||
 			K <- [bot_id, name, component, nick, linked_rooms, module]],
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
-	self() ! {linked_rooms, enter_groupchat}, %% enter to all linked rooms
+	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
 
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
@@ -31,23 +31,32 @@ handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->
 			_ -> Rooms
 		end,
 	{ok, State#{rooms => NewRooms}};
-handle_info({enter_groupchat, MucJid}, Client, #{component := Component, nick := Nick} = State) when is_binary(MucJid) ->
-	EnterPresence = #presence{from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick), sub_els = [#muc{}]},
+handle_info({presence, Type, MucJid} = Info, Client, #{component := Component, nick := Nick} = State)
+	when Type == available; Type == unavailable ->
+	?dbg("handle: ~p", [Info]),
+	EnterPresence = #presence{type = Type, from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick), sub_els = [#muc{}]},
 	escalus:send(Client, xmpp:encode(EnterPresence)),
 	{ok, State};
-handle_info({subscribe_component, MucJid}, Client, #{component := Component, nick := Nick} = State) when is_binary(MucJid) ->
-	?dbg("subscribe_component: ~p", [MucJid]),
-	escalus:send(Client, xmpp:encode(sub_iq(jid:make(Component), jid:decode(MucJid), Nick))),
+handle_info({event, SubAction, MucJid} = Info, Client, #{component := Component, nick := Nick} = State)
+	when SubAction == subscribe; SubAction == unsubscribe ->
+	?dbg("handle: ~p", [Info]),
+	escalus:send(Client, xmpp:encode(iq(SubAction, jid:make(Component), jid:decode(MucJid), Nick))),
 	{ok, State};
-handle_info({linked_rooms, Action}, Client, #{rooms := Rooms} = State)
-	when Action == enter_groupchat; Action == subscribe_component ->
-	{I, Prev, Next} = case Action of enter_groupchat -> {1, out, pending}; _ -> {2, unsubscribed, subscribed} end,
+handle_info({linked_rooms, Type, Action} = Info, Client, #{rooms := Rooms} = State) when Type == presence; Type == event ->
+	?dbg("handle: ~p", [Info]),
+	{I, Prev, Next} =
+		case {Type, Action} of
+			{presence, available} -> {1, out, pending};
+			{presence, unavailable} -> {1, in, pending};
+			{event, subscribe} -> {2, unsubscribed, subscribed};
+			{event, unsubscribe} -> {2, subscribed, unsubscribed}
+		end,
 	NewRooms =
 		lists:foldr(
 			fun(#muc_state{muc_jid = MucJid, state = S} = MucState, Acc) when element(I, S) == Prev ->
 				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
 					#muc_state{} -> ok;
-					false -> handle_info({Action, MucJid}, Client, State)
+					false -> handle_info({Type, Action, MucJid}, Client, State)
 				end,
 				[MucState#muc_state{state = setelement(I, S, Next)} | Acc];
 				(MucState, Acc) ->
@@ -110,20 +119,20 @@ process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{b
 		[] -> process_stanza([Pkt, State])
 	end;
 process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
-		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
+	#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
 	write_link(BotId, OriginId, Uid),
 	{ok, State};
 process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
-		#{bot_id := BotId, module := Module} = State | _]) -> %% retract message from xmpp groupchat
+	#{bot_id := BotId, module := Module} = State | _]) -> %% retract message from xmpp groupchat
 	?dbg("retract: ~p", [Pkt]),
 	Module:delete_message(State#{uid => Uid}),
 	Table = ebridgebot:bot_table(BotId),
 	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- index_read(BotId, Uid, #xmpp_link.uid)],
 	{ok, State};
-process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | T] = S)
+process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | _] = S)
 	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edit message from xmpp groupchat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
@@ -175,15 +184,20 @@ pid(BotId) ->
 		_ -> {error, bot_not_found}
 	end.
 
-sub_iq(From, To, Nick) ->
-	sub_iq(From, To, Nick, <<>>).
-sub_iq(From, To, Nick, Password) ->
-	#iq{type = set, from = From, to = To,
-		sub_els = [#muc_subscribe{nick = Nick, password = Password,
-			events = [?NS_MUCSUB_NODES_MESSAGES,
-				?NS_MUCSUB_NODES_AFFILIATIONS,
-				?NS_MUCSUB_NODES_SUBJECT,
-				?NS_MUCSUB_NODES_CONFIG]}]}.
+iq(SubAction, From, To, Nick) ->
+	iq(SubAction, From, To, Nick, <<>>).
+iq(SubAction, From, To, Nick, Password) ->
+	MucEl = case SubAction of
+		        subscribe ->
+			        #muc_subscribe{nick = Nick, password = Password,
+				        events = [?NS_MUCSUB_NODES_MESSAGES,
+					        ?NS_MUCSUB_NODES_AFFILIATIONS,
+					        ?NS_MUCSUB_NODES_SUBJECT,
+					        ?NS_MUCSUB_NODES_CONFIG]};
+		        unsubscribe ->
+			        #muc_unsubscribe{nick = Nick}
+	        end,
+	#iq{type = set, from = From, to = To, sub_els = [MucEl]}.
 
 edit_msg(From, To, Text, ReplaceId) ->
 	OriginId = ebridgebot:gen_uuid(),
