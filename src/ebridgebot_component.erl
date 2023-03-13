@@ -76,15 +76,16 @@ handle_info(Info, _Client, State) ->
 
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
-process_stanza(#presence{type = available, from = #jid{} = CurMucJID, to = To} = Pkt,
-	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid} = State) ->
-	?dbg("presence available: ~p", [Pkt]),
+process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{server = ComponentJid} = To} = Pkt,
+	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid} = State) when Type == available; Type == unavailable ->
+	?dbg("presence: ~p", [Pkt]),
+	Enter = case Type of available -> in; unavailable -> out end,
 	case {jid:encode(To), xmpp:get_subtag(Pkt, #muc_user{})} of
 		{ComponentJid, #muc_user{items = [#muc_item{jid = To}]}} ->
 			CurMucJid = jid:encode(jid:remove_resource(CurMucJID)),
 			case lists:keyfind(CurMucJid, #muc_state.muc_jid, Rooms) of
 				#muc_state{state = {_, S}} = MucState ->
-					NewRooms = lists:keyreplace(CurMucJid, #muc_state.muc_jid, Rooms, MucState#muc_state{state = {in, S}}),
+					NewRooms = lists:keyreplace(CurMucJid, #muc_state.muc_jid, Rooms, MucState#muc_state{state = {Enter, S}}),
 					{ok, State#{rooms => NewRooms}};
 				_ ->
 					?dbg("user not found in ~p: ~p in ~p", [BotId, CurMucJid, State]),

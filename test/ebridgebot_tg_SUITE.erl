@@ -140,9 +140,9 @@ subscribe_muc_story(Config) ->
 			escalus_component:send(Pid, groupchat_presence(Component, MucJid, Nick, unavailable)),
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			Pid ! sub_linked_rooms,
-			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {_, subscribed}}]} =
+			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
 				wait_for_result(fun() -> ebridgebot_component:state(Pid) end,
-					fun(#{rooms := [#muc_state{state = {_, subscribed}}]}) -> true; (_) -> false end),
+					fun(#{rooms := [#muc_state{state = {out, subscribed}}]}) -> true; (_) -> false end),
 
 			AliceMsg = <<"Hi, bot!">>, _AliceMsg2 = <<"Hi, bot! Edited">>,
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(MucJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
