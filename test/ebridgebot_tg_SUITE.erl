@@ -23,18 +23,20 @@ groups() ->
 	[{main, [sequence], MainStories}, {local, [sequence], MainStories}].
 
 init_per_suite(Config) ->
-	[escalus:Fun([{escalus_user_db, {module, escalus_ejabberd}} | Config], escalus_users:get_users([alice])) || Fun <- [delete_users, create_users]],
+	catch escalus:delete_users(Config),
+	escalus:create_users(Config),
 	application:stop(ebridgebot),
 	escalus:init_per_suite(Config).
 
 end_per_suite(Config) ->
+	escalus:delete_users(Config),
 	application:start(ebridgebot),
 	escalus:end_per_suite(Config).
 
 init_per_testcase(CaseName, Config) ->
 	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
 	Args = [{bot_id, BotId},
-		{component, escalus_ct:get_config(ejabberd_service)},
+		{component, Component = escalus_ct:get_config(ejabberd_service)},
 		{host, escalus_ct:get_config(ejabberd_addr)},
 		{password, escalus_ct:get_config(ejabberd_service_password)},
 		{port, escalus_ct:get_config(ejabberd_service_port)},
@@ -42,16 +44,41 @@ init_per_testcase(CaseName, Config) ->
 	{ok, Pid} = escalus_component:start({local, BotId}, ebridgebot_component, Args, Args),
 	[_Host, MucHost, Rooms, Users] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms, escalus_users]],
-	[begin
-		 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
-		 catch mod_muc_admin:destroy_room(Room, MucHost),
-		 ok = mod_muc:create_room(MucHost, Room, RoomOpts), %% TODO add affiliations in room options
-		 timer:sleep(100),
-		 [begin
-			  UserCfg = proplists:get_value(U, Users),
-			  Jid = jid:to_string(list_to_tuple([proplists:get_value(K, UserCfg) || K <- [username, server]] ++ [<<>>])),
-			  ok = mod_muc_admin:set_room_affiliation(Room, MucHost, Jid, atom_to_binary(Aff))
-		  end || {U, Aff} <- Affs]
+	[case escalus_ct:get_config(ejabberd_within) of
+		 true ->
+			 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
+
+			 catch mod_muc_admin:destroy_room(Room, MucHost),
+			 ok = mod_muc:create_room(MucHost, Room, RoomOpts), %% TODO add affiliations in room options
+			 timer:sleep(100),
+			 [begin
+				  UserCfg = proplists:get_value(U, Users),
+				  Jid = jid:to_string(list_to_tuple([proplists:get_value(K, UserCfg) || K <- [username, server]] ++ [<<>>])),
+				  ok = mod_muc_admin:set_room_affiliation(Room, MucHost, Jid, atom_to_binary(Aff))
+			  end || {U, Aff} <- Affs];
+		 false ->
+			 ChatId = escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, chat_id}),
+			 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
+			 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
+			 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
+			 Pid ! enter_linked_rooms,
+			 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_component:state(Pid),
+			 #{bot_id := BotId, rooms := [#muc_state{state = {in, _}}]} =
+				 wait_for_result(fun() -> ebridgebot_component:state(Pid) end,
+					 fun(#{rooms := [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
+			 Iq = #iq{type = set, from = jid:decode(Component), to = jid:make(Room, MucHost),
+				 sub_els = [#muc_owner{
+					 config =
+					 #xdata{type = submit,
+						 fields = [
+							 #xdata_field{
+								 var = <<"FORM_TYPE">>,
+								 values = [<<"http://jabber.org/protocol/muc#roomconfig">>]},
+							 #xdata_field{
+								 var = <<"muc#roomconfig_persistentroom">>,
+								 values = [<<"0">>]}]}}]},
+			 escalus_component:send(Pid, xmpp:encode(Iq)),
+			 ok
 	 end || {_, Opts} <- Rooms],
 	[{component_pid, Pid} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
@@ -68,21 +95,10 @@ muc_story(Config) ->
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
 	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
-	#{bot_id := BotId, rooms := []} = ebridgebot_component:state(Pid),
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			enter_room(Alice, RoomJid, AliceNick),
-			escalus_client:wait_for_stanzas(Alice, 1),
-			Pid ! {link_rooms, ChatId, RoomJid},
-			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
-
-			Pid ! enter_linked_rooms,
-			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_component:state(Pid),
-			escalus_client:wait_for_stanzas(Alice, 1),
-
-			#{bot_id := BotId, rooms := [#muc_state{state = {in, _}}]} =
-				wait_for_result(fun() -> ebridgebot_component:state(Pid) end,
-					fun(#{rooms := [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
+			escalus_client:wait_for_stanzas(Alice, 2),
 
 			AliceMsg = <<"Hi, bot!">>, AliceMsg2 = <<"Hi, bot! Edited">>,
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
@@ -158,7 +174,20 @@ subscribe_muc_story(Config) ->
 				wait_for_list(fun() -> ebridgebot_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
 			ok
 		end).
-
+%%
+%%muc_story2(Config) ->
+%%	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
+%%	MucHost = escalus_config:get_ct(muc_host),
+%%	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+%%	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
+%%	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+%%%%	#{bot_id := BotId, rooms := []} = ebridgebot_component:state(Pid),
+%%	escalus:story(Config, [{alice, 1}],
+%%		fun(#client{jid = _AliceJid} = Alice) ->
+%%			enter_room(Alice, RoomJid, AliceNick),
+%%			escalus_client:wait_for_stanzas(Alice, 1),
+%%			ok
+%%			end).
 %% tg API
 tg_message(ChatId, MessageId, Username, Text) ->
 	tg_message(<<"message">>, ChatId, MessageId, Username, Text).
