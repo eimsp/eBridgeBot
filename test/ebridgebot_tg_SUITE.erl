@@ -134,11 +134,10 @@ subscribe_muc_story(Config) ->
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
 	[BotId, Pid, Component, BotName, Nick] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name, nick]],
 	escalus:story(Config, [{alice, 1}],
-		fun(#client{jid = AliceJid} = Alice) ->
+		fun(#client{jid = _AliceJid} = Alice) ->
 			enter_room(Alice, MucJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
-			UnavailablePresence = presence(unavailable, Component, MucJid, Nick),
-			escalus_component:send(Pid, xmpp:encode(UnavailablePresence)),
+			escalus_component:send(Pid, groupchat_presence(Component, MucJid, Nick, unavailable)),
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			Pid ! sub_linked_rooms,
 			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {_, subscribed}}]} =
@@ -193,16 +192,13 @@ get_property(PropName, Proplist) ->
 			throw({missing_property, PropName})
 	end.
 
-presence(Type, From, To, Nick) when is_binary(From), is_binary(To) ->
-	#presence{type = Type, from = jid:make(From), to = jid:replace_resource(jid:decode(To), Nick), sub_els = [#muc{}]}.
+groupchat_presence(From, To, Nick) ->
+	groupchat_presence(From, To, Nick, available).
+groupchat_presence(#client{jid = From}, To, Nick, Type) ->
+	groupchat_presence(From, To, Nick, Type);
+groupchat_presence(From, To, Nick, Type) when is_binary(From), is_binary(To) ->
+	xmpp:encode(#presence{type = Type, from = jid:make(From), to = jid:replace_resource(jid:decode(To), Nick), sub_els = [#muc{}]}).
 
 enter_room(Client, RoomJid, Nick) ->
-	escalus:send(Client, enter_groupchat(Client, RoomJid, Nick)),
+	escalus:send(Client, groupchat_presence(Client, RoomJid, Nick)),
 	escalus_client:wait_for_stanzas(Client, 2). %% Client wait for 2 presences from ChatRoom
-
-enter_groupchat(#client{jid = FromJid}, RoomJid, Nick) ->
-	enter_groupchat(FromJid, RoomJid, Nick);
-enter_groupchat(FromJid, RoomJid, Nick) ->
-	#xmlel{name = <<"presence">>,
-		attrs = [{<<"from">>, FromJid}, {<<"to">>, <<RoomJid/binary, "/", Nick/binary>>}],
-		children = [#xmlel{name = <<"x">>, attrs = [{<<"xmlns">>, ?NS_MUC}]}]}.
