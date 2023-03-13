@@ -36,60 +36,33 @@ end_per_suite(Config) ->
 init_per_testcase(CaseName, Config) ->
 	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
 	Args = [{bot_id, BotId},
-		{component, Component = escalus_ct:get_config(ejabberd_service)},
+		{component, escalus_ct:get_config(ejabberd_service)},
 		{host, escalus_ct:get_config(ejabberd_addr)},
 		{password, escalus_ct:get_config(ejabberd_service_password)},
 		{port, escalus_ct:get_config(ejabberd_service_port)},
 		{linked_rooms, []}] ++ BotArgs,
-%%	mnesia:delete_table(ebridgebot:bot_table(BotId)),
 	{ok, Pid} = escalus_component:start({local, BotId}, ebridgebot_component, Args, Args),
-	[_Host, MucHost, Rooms, Users] =
-		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms, escalus_users]],
-	[case escalus_ct:get_config(ejabberd_within) of
-		 true ->
-			 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
+	[_Host, MucHost, Rooms] =
+		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
+	[begin
+		 [Room, ChatId] = [proplists:get_value(K, Opts) || K <- [name, chat_id]],
 
-			 catch mod_muc_admin:destroy_room(Room, MucHost),
-			 ok = mod_muc:create_room(MucHost, Room, RoomOpts), %% TODO add affiliations in room options
-			 timer:sleep(100),
-			 [begin
-				  UserCfg = proplists:get_value(U, Users),
-				  Jid = jid:to_string(list_to_tuple([proplists:get_value(K, UserCfg) || K <- [username, server]] ++ [<<>>])),
-				  ok = mod_muc_admin:set_room_affiliation(Room, MucHost, Jid, atom_to_binary(Aff))
-			  end || {U, Aff} <- Affs];
-		 false ->
-			 ChatId = escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, chat_id}),
-			 [Room, RoomOpts, Affs] = [proplists:get_value(K, Opts) || K <- [name, options, affiliations]],
-%%			 catch mod_muc_admin:destroy_room(Room, MucHost),
-%%			 timer:sleep(100),
-			 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
-			 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
-			 Pid ! enter_linked_rooms,
-			 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_component:state(Pid),
-			 #{bot_id := BotId, rooms := [#muc_state{state = {in, _}}]} =
-				 wait_for_result(fun() -> ebridgebot_component:state(Pid) end,
-					 fun(#{rooms := [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
-			 Iq = #iq{type = set, from = jid:decode(Component), to = jid:make(Room, MucHost),
-				 sub_els = [#muc_owner{
-					 config =
-					 #xdata{type = submit,
-						 fields = [
-							 #xdata_field{
-								 var = <<"FORM_TYPE">>,
-								 values = [<<"http://jabber.org/protocol/muc#roomconfig">>]},
-							 #xdata_field{
-								 var = <<"muc#roomconfig_persistentroom">>,
-								 values = [<<"0">>]}]}}]},
-			 escalus_component:send(Pid, xmpp:encode(Iq)),
-			 ok
+		 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
+		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
+
+		 Pid ! enter_linked_rooms,
+		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_component:state(Pid),
+		 #{bot_id := BotId, rooms := [#muc_state{state = {in, _}}]} =
+			 wait_for_result(fun() -> ebridgebot_component:state(Pid) end, %% wait for the room to be created and enter it
+				 fun(#{rooms := [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
+		 ok
 	 end || {_, Opts} <- Rooms],
 	[{component_pid, Pid} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
 
 end_per_testcase(CaseName, Config) ->
-	BotId = get_property(bot_id, Config),
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
-	mnesia:delete_table(ebridgebot:bot_table(BotId)),
+	mnesia:delete_table(ebridgebot:bot_table(get_property(bot_id, Config))),
 	escalus:end_per_testcase(CaseName, Config).
 
 destroy_room(Config) ->
@@ -150,6 +123,7 @@ muc_story(Config) ->
 			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
 			destroy_room(Config),
+			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			ok
 		end).
 
@@ -186,6 +160,7 @@ subscribe_muc_story(Config) ->
 			[#xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot_component:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
 			destroy_room(Config),
+			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			ok
 		end).
 
