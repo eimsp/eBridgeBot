@@ -13,7 +13,7 @@ init(Args) ->
 		[proplists:get_value(K, Args) ||
 			K <- [bot_id, name, component, nick, linked_rooms, module]],
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
-	self() ! enter_linked_rooms, %% enter to all linked rooms
+	self() ! {linked_rooms, enter_groupchat}, %% enter to all linked rooms
 
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
@@ -39,28 +39,17 @@ handle_info({subscribe_component, MucJid}, Client, #{component := Component, nic
 	?dbg("subscribe_component: ~p", [MucJid]),
 	escalus:send(Client, xmpp:encode(sub_iq(jid:make(Component), jid:decode(MucJid), Nick))),
 	{ok, State};
-handle_info(enter_linked_rooms, Client, #{rooms := Rooms} = State) ->
+handle_info({linked_rooms, Action}, Client, #{rooms := Rooms} = State)
+	when Action == enter_groupchat; Action == subscribe_component ->
+	{I, Prev, Next} = case Action of enter_groupchat -> {1, out, pending}; _ -> {2, unsubscribed, subscribed} end,
 	NewRooms =
 		lists:foldr(
-			fun(#muc_state{muc_jid = MucJid, state = {out, S}} = MucState, Acc) ->
+			fun(#muc_state{muc_jid = MucJid, state = S} = MucState, Acc) when element(I, S) == Prev ->
 				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
 					#muc_state{} -> ok;
-					false -> handle_info({enter_groupchat, MucJid}, Client, State)
+					false -> handle_info({Action, MucJid}, Client, State)
 				end,
-				[MucState#muc_state{state = {pending, S}} | Acc];
-				(MucState, Acc) ->
-					[MucState | Acc]
-			end, [], Rooms),
-	{ok, State#{rooms => NewRooms}};
-handle_info(sub_linked_rooms, Client, #{rooms := Rooms} = State) ->
-	NewRooms =
-		lists:foldr( %% TODO combine enter_linked_rooms and sub_linked_rooms
-			fun(#muc_state{muc_jid = MucJid, state = {E, unsubscribed}} = MucState, Acc) ->
-				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
-					#muc_state{} -> ok;
-					false -> handle_info({subscribe_component, MucJid}, Client, State)
-				end,
-				[MucState#muc_state{state = {E, subscribed}} | Acc];
+				[MucState#muc_state{state = setelement(I, S, Next)} | Acc];
 				(MucState, Acc) ->
 					[MucState | Acc]
 			end, [], Rooms),

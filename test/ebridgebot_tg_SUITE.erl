@@ -50,7 +50,7 @@ init_per_testcase(CaseName, Config) ->
 		 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
 		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
 
-		 Pid ! enter_linked_rooms,
+		 Pid ! {linked_rooms, enter_groupchat},
 		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {pending, unsubscribed}}]} = ebridgebot_component:state(Pid),
 		 #{bot_id := BotId, rooms := [#muc_state{state = {in, _}}]} =
 			 wait_for_result(fun() -> ebridgebot_component:state(Pid) end, %% wait for the room to be created and enter it
@@ -139,7 +139,7 @@ subscribe_muc_story(Config) ->
 			escalus_client:wait_for_stanzas(Alice, 2),
 			escalus_component:send(Pid, groupchat_presence(Component, MucJid, Nick, unavailable)),
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
-			Pid ! sub_linked_rooms,
+			Pid ! {linked_rooms, subscribe_component},
 			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
 				wait_for_result(fun() -> ebridgebot_component:state(Pid) end,
 					fun(#{rooms := [#muc_state{state = {out, subscribed}}]}) -> true; (_) -> false end),
