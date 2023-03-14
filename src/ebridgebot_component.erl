@@ -1,12 +1,11 @@
 -module(ebridgebot_component).
 
-%% API
--compile(export_all).
-
 -include_lib("xmpp/include/xmpp.hrl").
 -include("ebridgebot.hrl").
 
--export([init/1, handle_info/3, process_stanza/3, terminate/2]).
+%% API
+-export([init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
+	state/1, pid/1, index_read/3, write_link/3, edit_msg/4]).
 
 init(Args) ->
 	[BotId, BotName, Component, Nick, Rooms, Module] =
@@ -171,10 +170,12 @@ stop(BotId) ->
 	Pid = pid(BotId),
 	escalus_component:stop(Pid, <<"stopped">>).
 
+-spec state(atom()) -> #{} | {error, timeout}.
 state(BotId) ->
 	pid(BotId) ! {state, self()},
 	receive {state, State} -> State after 1000 -> {error, timeout} end.
 
+-spec pid(atom() | pid()) -> pid().
 pid(Pid) when is_pid(Pid) ->
 	Pid;
 pid(BotId) ->
@@ -184,25 +185,31 @@ pid(BotId) ->
 		_ -> {error, bot_not_found}
 	end.
 
+-spec iq(list(muc_subscribe() | muc_unsubscribe()), jid(), jid()) -> iq().
 iq(Els, From, To) when is_list(Els) ->
 	#iq{type = set, from = From, to = To, sub_els = Els}.
+
+-spec iq(subscribe | unsubscribe, jid(), jid(), binary()) -> iq().
 iq(SubAction, From, To, Nick) ->
 	iq(SubAction, From, To, Nick, <<>>).
-iq(subscribe, From, To, Nick, Password) ->
-	Els = [#muc_subscribe{nick = Nick, password = Password, events = [?NS_MUCSUB_NODES_MESSAGES]}],
-	iq(Els, From, To);
-iq(unsubscribe, From, To, Nick, _Password) ->
-	Els = #muc_unsubscribe{nick = Nick},
-	iq(Els, From, To).
 
+-spec iq(subscribe | unsubscribe, jid(), jid(), binary(), binary()) -> iq().
+iq(subscribe, From, To, Nick, Password) ->
+	iq([#muc_subscribe{nick = Nick, password = Password, events = [?NS_MUCSUB_NODES_MESSAGES]}], From, To);
+iq(unsubscribe, From, To, Nick, _Password) ->
+	iq([#muc_unsubscribe{nick = Nick}], From, To).
+
+-spec edit_msg(jid(), jid(), binary(), binary()) -> message().
 edit_msg(From, To, Text, ReplaceId) ->
 	OriginId = ebridgebot:gen_uuid(),
 	#message{id = OriginId, type = groupchat, from = From, to = To, body = [#text{data = Text}],
 		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId}]}.
 
+-spec write_link(atom(), binary(), any()) -> ok.
 write_link(BotId, OriginId, Uid) ->
 	mnesia:dirty_write(
 		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = Uid}, ebridgebot:bot_table(BotId))).
 
-index_read(BotId, Key, Field) ->
-	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Field)].
+-spec index_read(binary(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
+index_read(BotId, Key, Attr) ->
+	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Attr)].
