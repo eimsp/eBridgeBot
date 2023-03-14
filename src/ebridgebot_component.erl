@@ -184,20 +184,16 @@ pid(BotId) ->
 		_ -> {error, bot_not_found}
 	end.
 
+iq(Els, From, To) when is_list(Els) ->
+	#iq{type = set, from = From, to = To, sub_els = Els}.
 iq(SubAction, From, To, Nick) ->
 	iq(SubAction, From, To, Nick, <<>>).
-iq(SubAction, From, To, Nick, Password) ->
-	MucEl = case SubAction of
-		        subscribe ->
-			        #muc_subscribe{nick = Nick, password = Password,
-				        events = [?NS_MUCSUB_NODES_MESSAGES,
-					        ?NS_MUCSUB_NODES_AFFILIATIONS,
-					        ?NS_MUCSUB_NODES_SUBJECT,
-					        ?NS_MUCSUB_NODES_CONFIG]};
-		        unsubscribe ->
-			        #muc_unsubscribe{nick = Nick}
-	        end,
-	#iq{type = set, from = From, to = To, sub_els = [MucEl]}.
+iq(subscribe, From, To, Nick, Password) ->
+	Els = [#muc_subscribe{nick = Nick, password = Password, events = [?NS_MUCSUB_NODES_MESSAGES]}],
+	iq(Els, From, To);
+iq(unsubscribe, From, To, Nick, _Password) ->
+	Els = #muc_unsubscribe{nick = Nick},
+	iq(Els, From, To).
 
 edit_msg(From, To, Text, ReplaceId) ->
 	OriginId = ebridgebot:gen_uuid(),
