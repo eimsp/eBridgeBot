@@ -27,7 +27,7 @@ handle_info({pe4kin_update, BotName,
 		 OriginId = ebridgebot:gen_uuid(),
 		 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
 			 body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-		 ebridgebot_component:write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
+		 ebridgebot:write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)], %% TODO maybe remove 'subscribed' state
 	{ok, State};
@@ -39,11 +39,11 @@ handle_info({pe4kin_update, BotName,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
 	?dbg("edit tg msg groupchat: ~p", [TgMsg]),
-	[case ebridgebot_component:index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
+	[case ebridgebot:index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
 		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
-			 Pkt = #message{id = OriginId} = ebridgebot_component:edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
+			 Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
 			 escalus:send(Client, xmpp:encode(Pkt)),
-			 ebridgebot_component:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
+			 ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
 		 _ -> ok
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};

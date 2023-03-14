@@ -1,8 +1,11 @@
 -module(ebridgebot).
 -compile(export_all).
 
+-include_lib("xmpp/include/xmpp.hrl").
 -include("ebridgebot.hrl").
 
+%% API
+-spec gen_uuid() -> binary().
 gen_uuid() ->
 	list_to_binary(uuid:uuid_to_string(uuid:get_v4())).
 
@@ -65,6 +68,34 @@ wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integ
 	wait_for_result(Fun, PredFun, Counter, Interval).
 
 %% component help API
-
 bot_table(BotId) -> %% generate table name for bot
 	list_to_atom(atom_to_list(BotId)++"_link").
+
+-spec iq(list(muc_subscribe() | muc_unsubscribe()), jid(), jid()) -> iq().
+iq(Els, From, To) when is_list(Els) ->
+	#iq{type = set, from = From, to = To, sub_els = Els}.
+
+-spec iq(subscribe | unsubscribe, jid(), jid(), binary()) -> iq().
+iq(SubAction, From, To, Nick) ->
+	iq(SubAction, From, To, Nick, <<>>).
+
+-spec iq(subscribe | unsubscribe, jid(), jid(), binary(), binary()) -> iq().
+iq(subscribe, From, To, Nick, Password) ->
+	iq([#muc_subscribe{nick = Nick, password = Password, events = [?NS_MUCSUB_NODES_MESSAGES]}], From, To);
+iq(unsubscribe, From, To, Nick, _Password) ->
+	iq([#muc_unsubscribe{nick = Nick}], From, To).
+
+-spec edit_msg(jid(), jid(), binary(), binary()) -> message().
+edit_msg(From, To, Text, ReplaceId) ->
+	OriginId = ebridgebot:gen_uuid(),
+	#message{id = OriginId, type = groupchat, from = From, to = To, body = [#text{data = Text}],
+		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId}]}.
+
+-spec write_link(atom(), binary(), any()) -> ok.
+write_link(BotId, OriginId, Uid) ->
+	mnesia:dirty_write(
+		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = Uid}, ebridgebot:bot_table(BotId))).
+
+-spec index_read(binary(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
+index_read(BotId, Key, Attr) ->
+	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Attr)].
