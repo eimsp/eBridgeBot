@@ -5,7 +5,7 @@
 
 %% API
 -export([init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
-	state/1, pid/1]).
+	state/1, pid/1, filter_pred/1]).
 
 -define(CLEAR_INTERVAL, 24). %% in hours
 
@@ -57,6 +57,7 @@ handle_info({event, SubAction, MucJid} = Info, Client, #{component := Component,
 	{ok, State};
 handle_info({linked_rooms, Type, Action} = Info, Client, #{rooms := Rooms} = State) when Type == presence; Type == event ->
 	?dbg("handle: ~p", [Info]),
+	escalus_connection:set_filter_predicate(Client, filter_pred(State)),
 	{I, Prev, Next} =
 		case {Type, Action} of
 			{presence, available} -> {1, out, pending};
@@ -121,10 +122,6 @@ process_stanza(#ps_event{items = #ps_items{node = ?NS_MUCSUB_NODES_MESSAGES, ite
 process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #{} = State | _]) ->
 	?dbg("handle event message: ~p", [Event]),
 	%% TODO not implemented
-	{ok, State};
-process_stanza(_, [#message{type = groupchat, from = #jid{resource = ComponentNick}} = Pkt,
-	#{nick := ComponentNick} = State | _]) -> %% ignore echo messages from xmpp client
-	?dbg("handle message: ~p", [Pkt]),
 	{ok, State};
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{bot_id := BotId} = State | _]) ->
 	case ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
@@ -197,4 +194,13 @@ pid(BotId) ->
 	case lists:keyfind(BotId, 1, Children) of
 		{_, Pid, _, _} -> Pid;
 		_ -> {error, bot_not_found}
+	end.
+
+filter_pred(#{component := Component, nick := ComponentNick}) -> %% filter echo messages
+	fun(#xmlel{} = Pkt) ->
+			case xmpp:decode(Pkt) of
+				#message{type = groupchat, to = #jid{server = Component}, from = #jid{resource = ComponentNick}} -> false;
+				_ -> true
+			end;
+		(_) -> true
 	end.
