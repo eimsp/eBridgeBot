@@ -1,0 +1,7 @@
+_build/
+ct_*/
+*.log
+ebin/
+Mnesia.*/
+test/log/
+*.beam
