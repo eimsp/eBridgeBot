@@ -17,11 +17,11 @@ init(Args) ->
 
 handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
-	#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
+	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
 		<<"from">> := #{<<"username">> := TgUserName},
 		<<"message_id">> := Id,
 		<<"text">> := Text}}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("tg msg groupchat: ~p", [TgMsg]),
 	[begin
 		 OriginId = ebridgebot:gen_uuid(),
@@ -33,11 +33,11 @@ handle_info({pe4kin_update, BotName,
 	{ok, State};
 handle_info({pe4kin_update, BotName,
 	#{<<"edited_message">> :=
-	#{<<"chat">> := #{<<"type">> := <<"group">>, <<"id">> := CurChatId},
+	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
 		<<"from">> := #{<<"username">> := TgUserName},
 		<<"message_id">> := Id,
 		<<"text">> := Text}}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("edit tg msg groupchat: ~p", [TgMsg]),
 	[case ebridgebot:index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
 		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
