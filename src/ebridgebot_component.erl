@@ -7,6 +7,8 @@
 -export([init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
 	state/1, pid/1]).
 
+-define(CLEAR_INTERVAL, 24). %% in hours
+
 init(Args) ->
 	[BotId, BotName, Component, Nick, Rooms, Module] =
 		[proplists:get_value(K, Args) ||
@@ -22,11 +24,18 @@ init(Args) ->
 	{ok, State} = Module:init(Args),
 	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module}}.
 
-
+handle_info({link_scheduler, TimeInterval} = Info, _Client, State) -> %% TimeInterval in milliseconds
+	handle_info({remove_old_links, erlang:system_time(microsecond) - TimeInterval * 1000}, _Client, State),
+	{ok, TRef} = timer:send_after(TimeInterval, Info),
+	{ok, State#{link_scheduler_ref => TRef}};
+handle_info(stop_link_scheduler, _Client, #{link_scheduler_ref := TRef} = State) ->
+	erlang:cancel_timer(TRef),
+	{ok, maps:remove(link_scheduler_ref, State)};
 handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
 	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
 	[mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)],
 	{ok, State};
+
 handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
 	NewRooms =
