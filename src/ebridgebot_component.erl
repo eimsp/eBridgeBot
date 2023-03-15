@@ -22,6 +22,11 @@ init(Args) ->
 	{ok, State} = Module:init(Args),
 	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module}}.
 
+
+handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
+	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
+	[mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)],
+	{ok, State};
 handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->
 	LMucJid = string:lowercase(MucJid),
 	NewRooms =
