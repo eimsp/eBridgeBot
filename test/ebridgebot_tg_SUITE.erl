@@ -139,6 +139,7 @@ subscribe_muc_story(Config) ->
 			escalus_client:wait_for_stanzas(Alice, 2),
 			escalus_component:send(Pid, groupchat_presence(Component, MucJid, Nick, unavailable)),
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
+			CreateTime = erlang:system_time(microsecond),
 			Pid ! {linked_rooms, event, subscribe},
 			#{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, subscribed}}]} =
 				wait_for_result(fun() -> ebridgebot_component:state(Pid) end,
@@ -158,6 +159,13 @@ subscribe_muc_story(Config) ->
 			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
+
+			Pid ! {remove_old_links, CreateTime}, %% does not remove any link
+			[_, _] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 2),
+
+			Pid ! {remove_old_links, erlang:system_time(microsecond)}, %% removes all links
+			[] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end),
+
 			destroy_room(Config),
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			ok
