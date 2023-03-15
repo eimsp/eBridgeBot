@@ -1,6 +1,7 @@
 _build/
 ct_*/
 *.log
+log/
 ebin/
 Mnesia.*/
 test/log/
