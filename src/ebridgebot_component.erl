@@ -7,31 +7,35 @@
 -export([init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
 	state/1, pid/1, filter_pred/1]).
 
--define(CLEAR_INTERVAL, 24). %% in hours
-
 init(Args) ->
 	[BotId, BotName, Component, Nick, Rooms, Module] =
 		[proplists:get_value(K, Args) ||
 			K <- [bot_id, name, component, nick, linked_rooms, module]],
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
-	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
 
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
 		[{attributes, record_info(fields, xmpp_link)},
 			{index, [xmpp_id, uid]},
 			{disc_copies, [node()]}]),
+
+	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
+
 	{ok, State} = Module:init(Args),
 	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module}}.
 
-handle_info({link_scheduler, TimeInterval} = Info, _Client, State) -> %% TimeInterval in milliseconds
-	handle_info({remove_old_links, erlang:system_time(microsecond) - TimeInterval * 1000}, _Client, State),
-	{ok, TRef} = timer:send_after(TimeInterval, Info),
+handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% TimeInterval and LifeSpan in milliseconds
+	?dbg("link_scheduler", []),
+	catch erlang:cancel_timer(maps:get(link_scheduler_ref, State)),
+	handle_info({remove_old_links, erlang:system_time(microsecond) - LifeSpan * 1000}, _Client, State),
+	{ok, TRef} = timer:send_after(ClearInterval, Info),
 	{ok, State#{link_scheduler_ref => TRef}};
 handle_info(stop_link_scheduler, _Client, #{link_scheduler_ref := TRef} = State) ->
+	?dbg("stop_link_scheduler", []),
 	erlang:cancel_timer(TRef),
 	{ok, maps:remove(link_scheduler_ref, State)};
 handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
+	?dbg("remove_old_links", []),
 	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
 	[mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)],
 	{ok, State};

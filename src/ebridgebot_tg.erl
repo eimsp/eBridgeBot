@@ -7,12 +7,20 @@
 
 -export([init/1, handle_info/3, send_message/2, edit_message/2, delete_message/1, link_pred/1]).
 
+-define(CLEARING_INTERVAL, 24). %% in hours
+-define(LIFE_SPAN, 48). %% in hours
+
 init(Args) ->
 	application:ensure_all_started(pe4kin),
 	[BotName, BotToken] = [proplists:get_value(K, Args) || K <- [name, token]],
 	pe4kin:launch_bot(BotName, BotToken, #{receiver => true}),
 	pe4kin_receiver:subscribe(BotName, self()),
 	pe4kin_receiver:start_http_poll(BotName, #{limit => 100, timeout => 60}),
+
+	ClearingInterval = proplists:get_value(clearing_interval, Args, ?CLEARING_INTERVAL),
+	LifeSpan = proplists:get_value(life_span, Args, ?LIFE_SPAN),
+	self() ! {link_scheduler, ClearingInterval * 60 * 60 * 1000, LifeSpan * 60 * 60 * 1000}, %% start scheduler
+
 	{ok, #{token => BotToken}}.
 
 handle_info({pe4kin_update, BotName,
