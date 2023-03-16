@@ -6,3 +6,10 @@ ebin/
 Mnesia.*/
 test/log/
 *.beam
+*.html
+*.js
+rebar.lock
+rebar3
+ct_*
+*.iml
+variables-*@*
