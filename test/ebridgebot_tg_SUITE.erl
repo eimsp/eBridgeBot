@@ -19,7 +19,7 @@ all() ->
 	[{group, main}].
 
 groups() ->
-	MainStories = [muc_story, subscribe_muc_story],
+	MainStories = [muc_story, subscribe_muc_story, link_scheduler_story],
 	[{main, [sequence], MainStories}, {local, [sequence], MainStories}].
 
 init_per_suite(Config) ->
@@ -170,6 +170,24 @@ subscribe_muc_story(Config) ->
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			ok
 		end).
+
+link_scheduler_story(Config) ->
+	[_RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
+	[Pid, BotId] = [get_property(K, Config) || K <- [component_pid, bot_id]],
+	#{link_scheduler_ref := _} = ebridgebot_component:state(Pid), %% scheduler by default
+
+	%% add 3 messages with different time of creation
+	Table = ebridgebot:bot_table(BotId),
+	ebridgebot:write_link(BotId, ebridgebot:gen_uuid(), Uid = #tg_id{chat_id = ChatId, id = MessageId = 1}),
+	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 2000000, ebridgebot:gen_uuid(), Uid2 = Uid#tg_id{id = MessageId + 1}}),
+	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 800000, ebridgebot:gen_uuid(), Uid2#tg_id{id = MessageId + 1}}),
+
+	Pid ! {link_scheduler, 200, 1000}, %% start new scheduler
+	%% to make sure that the messages are deleted one by one
+	[I = length(wait_for_list(fun() -> mnesia:dirty_all_keys(Table) end, I)) || I <- lists:reverse(lists:seq(0, 2))],
+	Pid ! stop_link_scheduler, %% start new scheduler
+	false = maps:is_key(link_scheduler_ref, ebridgebot_component:state(Pid)), %% to make sure that scheduler is stopped
+	Config.
 
 %% tg API
 tg_message(ChatId, MessageId, Username, Text) ->
