@@ -5,7 +5,7 @@
 
 %% API
 -export([init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
-	state/1, pid/1, filter_pred/1]).
+	state/1, state/2, pid/1, filter_pred/1]).
 
 init(Args) ->
 	[BotId, BotName, Component, Nick, Rooms, Module] =
@@ -32,7 +32,7 @@ handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) ->
 	{ok, State#{link_scheduler_ref => TRef}};
 handle_info(stop_link_scheduler, _Client, #{link_scheduler_ref := TRef} = State) ->
 	?dbg("stop_link_scheduler", []),
-	erlang:cancel_timer(TRef),
+	catch erlang:cancel_timer(TRef),
 	{ok, maps:remove(link_scheduler_ref, State)};
 handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
 	?dbg("remove_old_links", []),
@@ -187,8 +187,10 @@ stop(BotId) ->
 
 -spec state(atom()) -> #{} | {error, timeout}.
 state(BotId) ->
+	state(BotId, 1000).
+state(BotId, Timeout) ->
 	pid(BotId) ! {state, self()},
-	receive {state, State} -> State after 1000 -> {error, timeout} end.
+	receive {state, State} -> State after Timeout -> {error, timeout} end.
 
 -spec pid(atom() | pid()) -> pid().
 pid(Pid) when is_pid(Pid) ->
