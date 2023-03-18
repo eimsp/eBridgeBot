@@ -41,7 +41,7 @@ init_per_testcase(CaseName, Config) ->
 		{password, escalus_ct:get_config(ejabberd_service_password)},
 		{port, escalus_ct:get_config(ejabberd_service_port)},
 		{linked_rooms, []}] ++ BotArgs,
-	{ok, Pid} = escalus_component:start({local, BotId}, ebridgebot_component, Args, Args),
+	{ok, Pid} = ebridgebot_component:start(BotId, Args),
 	[_Host, MucHost, Rooms] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
 	[begin
