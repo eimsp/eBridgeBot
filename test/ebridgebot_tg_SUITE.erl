@@ -29,7 +29,7 @@ init_per_suite(Config) ->
 	escalus:init_per_suite(Config).
 
 end_per_suite(Config) ->
-	escalus:delete_users(Config),
+	catch escalus:delete_users(Config),
 	application:start(ebridgebot),
 	escalus:end_per_suite(Config).
 
