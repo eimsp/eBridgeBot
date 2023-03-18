@@ -49,15 +49,16 @@ The application can be configured by modifying the `etc/sys.config` file. The fo
 [{ebridgebot,
 	 {bots, %% list of bots
 		[{tg_bot, %% unique id of the bot
-			[{component, <<"tg.localhost">>}, %% XMPP component host
-				{name, <<"ebridge_bot">>}, %% 
-				{host, <<"127.0.0.1">>},
-				{nick, <<"tg_bot">>},
-				{password, <<"secret">>},
-				{module, ebridgebot_tg},
-				{port, 8888},
-				{token, <<"6066841531:AAEK0aUdaP6eoJWcS0020VOyYQpNhhMpBPE">>},
-				{linked_rooms, [{-930545885, <<"deribit.test2@conference.localhost">>}]}]}]}]}
+			[{component, <<"tg.localhost">>}, %% XMPP component host name
+             {port, 8888}, %% XMPP service port
+             {password, <<"secret">>}, %% XMPP component password
+             {name, <<"botname">>}, %% The telegram bot name
+             {host, <<"127.0.0.1">>}, %% XMPP server address
+             {nick, <<"tg_bot">>}, %% XMPP nick
+             {module, ebridgebot_tg}, %% implement Telegram callbacks or other third party messenger
+             {token, <<"Telegram-token">>}, %% 
+            {linked_rooms, [{-930545885, <<"my.room@conference.localhost">>}]} %% link Telegram chat id with XMPP MUC chat
+            ]}]}]
 ```
 
 [comment]: <> (* `bots` - list of bots)
@@ -74,179 +75,274 @@ The application can be configured by modifying the `etc/sys.config` file. The fo
 
 [comment]: <> (* ebridgebot_telegram_bot_token - the token of the Telegram bot to use for communication)
 
-* `throttle:setup(Scope, RateLimit, RatePeriod)`: setup a rate limit
-   for a given `Scope`, allowing at most `RateLimit` requests per
-   `RatePeriod`. Allowed rate periods are `per_second`, `per_minute`,
-   `per_hour` and `per_day`.
+[comment]: <> (* `throttle:setup&#40;Scope, RateLimit, RatePeriod&#41;`: setup a rate limit)
 
-   Rates can also be set via application environment instead of
-   calling `setup`:
+[comment]: <> (   for a given `Scope`, allowing at most `RateLimit` requests per)
 
-   ```erlang
-   {throttle, [{rates, [{my_global_scope, 10, per_second}
-                        {my_expensive_endpoint, 2, per_minute}]}]}
-   ```
+[comment]: <> (   `RatePeriod`. Allowed rate periods are `per_second`, `per_minute`,)
 
-* `throttle:check(Scope, Key)`: attempt to request `Scope` with a
-  given `Key` (e.g. user token, IP). The result will be `{ok,
-  RemainingAttempts, TimeToReset}` if there are attempts left or
-  `{limit_exceeded, 0, TimeToReset}` if there aren't.
+[comment]: <> (   `per_hour` and `per_day`.)
 
-* `throttle:peek(Scope, Key)`: returns the same result as `check`
-  without increasing the requests count.
+[comment]: <> (   Rates can also be set via application environment instead of)
 
-### Distributed support
+[comment]: <> (   calling `setup`:)
 
-By default, throttle keeps the attempt counters on ETS tables, and
-therefore those are local to the Erlang node. Mnesia can be used
-instead to enfore access limits across all connected nodes, by setting
-the `driver` configuration parameter to `throttle_mnesia`:
+[comment]: <> (   ```erlang)
 
-``` erlang
-{throttle, [{driver, throttle_mnesia},
-            {rates, [{my_global_scope, 10, per_second}]}]}
-```
+[comment]: <> (   {throttle, [{rates, [{my_global_scope, 10, per_second})
 
-When using the Mnesia driver, `throttle_mnesia:setup()` needs to be
-called after the cluster is connected (the tables have to be shared across
-nodes, so the nodes must be visible before intialization):
+[comment]: <> (                        {my_expensive_endpoint, 2, per_minute}]}]})
 
-``` erlang
-(n1@127.0.0.1)1> application:set_env(throttle, driver, throttle_mnesia).
-ok
-(n1@127.0.0.1)2> application:ensure_all_started(throttle).
-{ok,[throttle]}
-(n1@127.0.0.1)3> net_kernel:connect('n2@127.0.0.1').
-true
-(n1@127.0.0.1)4> throttle_mnesia:setup().
-ok
-```
+[comment]: <> (   ```)
 
-When checking for a Key to access a given Scope, an access counter is
-incremented in Mnesia. The
-[activity access context](http://learnyousomeerlang.com/mnesia#access-and-context)
-for that operation can be configured with the `access_context`
-parameter:
+[comment]: <> (* `throttle:check&#40;Scope, Key&#41;`: attempt to request `Scope` with a)
 
-``` erlang
-{throttle, [{driver, throttle_mnesia},
-            {access_context, sync_transaction}]}.
-```
+[comment]: <> (  given `Key` &#40;e.g. user token, IP&#41;. The result will be `{ok,)
 
-By default, the `async_dirty` context is used, which prioritizes speed
-over consistency when propagating the counter increment. This means
-there's a chance of two nodes getting access to a resource when there
-is one attempt left. Depending the application, it may make more
-sense to choose a different context (like `sync_transaction`) to
-reduce the chances of allowing accesses above the limit.
+[comment]: <> (  RemainingAttempts, TimeToReset}` if there are attempts left or)
+
+[comment]: <> (  `{limit_exceeded, 0, TimeToReset}` if there aren't.)
+
+[comment]: <> (* `throttle:peek&#40;Scope, Key&#41;`: returns the same result as `check`)
+
+[comment]: <> (  without increasing the requests count.)
+
+[comment]: <> (### Distributed support)
+
+[comment]: <> (By default, throttle keeps the attempt counters on ETS tables, and)
+
+[comment]: <> (therefore those are local to the Erlang node. Mnesia can be used)
+
+[comment]: <> (instead to enfore access limits across all connected nodes, by setting)
+
+[comment]: <> (the `driver` configuration parameter to `throttle_mnesia`:)
+
+[comment]: <> (``` erlang)
+
+[comment]: <> ({throttle, [{driver, throttle_mnesia},)
+
+[comment]: <> (            {rates, [{my_global_scope, 10, per_second}]}]})
+
+[comment]: <> (```)
+
+[comment]: <> (When using the Mnesia driver, `throttle_mnesia:setup&#40;&#41;` needs to be)
+
+[comment]: <> (called after the cluster is connected &#40;the tables have to be shared across)
+
+[comment]: <> (nodes, so the nodes must be visible before intialization&#41;:)
+
+[comment]: <> (``` erlang)
+
+[comment]: <> (&#40;n1@127.0.0.1&#41;1> application:set_env&#40;throttle, driver, throttle_mnesia&#41;.)
+
+[comment]: <> (ok)
+
+[comment]: <> (&#40;n1@127.0.0.1&#41;2> application:ensure_all_started&#40;throttle&#41;.)
+
+[comment]: <> ({ok,[throttle]})
+
+[comment]: <> (&#40;n1@127.0.0.1&#41;3> net_kernel:connect&#40;'n2@127.0.0.1'&#41;.)
+
+[comment]: <> (true)
+
+[comment]: <> (&#40;n1@127.0.0.1&#41;4> throttle_mnesia:setup&#40;&#41;.)
+
+[comment]: <> (ok)
+
+[comment]: <> (```)
+
+[comment]: <> (When checking for a Key to access a given Scope, an access counter is)
+
+[comment]: <> (incremented in Mnesia. The)
+
+[comment]: <> ([activity access context]&#40;http://learnyousomeerlang.com/mnesia#access-and-context&#41;)
+
+[comment]: <> (for that operation can be configured with the `access_context`)
+
+[comment]: <> (parameter:)
+
+[comment]: <> (``` erlang)
+
+[comment]: <> ({throttle, [{driver, throttle_mnesia},)
+
+[comment]: <> (            {access_context, sync_transaction}]}.)
+
+[comment]: <> (```)
+
+[comment]: <> (By default, the `async_dirty` context is used, which prioritizes speed)
+
+[comment]: <> (over consistency when propagating the counter increment. This means)
+
+[comment]: <> (there's a chance of two nodes getting access to a resource when there)
+
+[comment]: <> (is one attempt left. Depending the application, it may make more)
+
+[comment]: <> (sense to choose a different context &#40;like `sync_transaction`&#41; to)
+
+[comment]: <> (reduce the chances of allowing accesses above the limit.)
 
 ## Examples
 
 ### Shell
 ``` erlang
-1> application:ensure_all_started(throttle).
-{ok,[throttle]}
-2> throttle:setup(my_api_endpoint, 3, per_minute).
-ok
-3> throttle:check(my_api_endpoint, my_token_or_ip).
-{ok,2,30362}
-4> throttle:check(my_api_endpoint, my_token_or_ip).
-{ok,1,29114}
-5> throttle:check(my_api_endpoint, my_token_or_ip).
-{ok,0,27978}
-6> throttle:check(my_api_endpoint, my_token_or_ip).
-{limit_exceeded,0,26722}
+$ rebar3 shell
 ```
+[comment]: <> (2> application:ensure_all_started&#40;ebridgebot&#41;.)
 
-### Cowboy 2.0 limit by IP
+[comment]: <> ({ok,[ebridgebot]})
 
-Middleware module:
+[comment]: <> (2> throttle:setup&#40;my_api_endpoint, 3, per_minute&#41;.)
 
-``` erlang
--module(throttling_middleware).
+[comment]: <> (ok)
 
--behavior(cowboy_middleware).
+[comment]: <> (3> throttle:check&#40;my_api_endpoint, my_token_or_ip&#41;.)
 
--export([execute/2]).
+[comment]: <> ({ok,2,30362})
 
-execute(Req, Env) ->
-  {{IP, _}, Req2} = cowboy_req:peer(Req),
+[comment]: <> (4> throttle:check&#40;my_api_endpoint, my_token_or_ip&#41;.)
 
-  case throttle:check(my_api_rate, IP) of
-    {limit_exceeded, _, _} ->
-      lager:warning("IP ~p exceeded api limit", [IP]),
-      Req3 = cowboy_req:reply(429, Req2),
-      {stop, Req3};
-    _ ->
-      {ok, Req2, Env}
-  end.
-```
+[comment]: <> ({ok,1,29114})
 
-Using it:
+[comment]: <> (5> throttle:check&#40;my_api_endpoint, my_token_or_ip&#41;.)
 
-``` erlang
-cowboy:start_clear(my_http_listener, [{port, 8080}], #{
-		env => #{dispatch => Dispatch},
-		middlewares => [cowboy_router, throttling_middleware, cowboy_handler]
-	}),
-```
+[comment]: <> ({ok,0,27978})
 
-### Cowboy 2.0 limit by Authorization header
+[comment]: <> (6> throttle:check&#40;my_api_endpoint, my_token_or_ip&#41;.)
 
-``` erlang
--module(throttling_middleware).
+[comment]: <> ({limit_exceeded,0,26722})
 
--behavior(cowboy_middleware).
+[comment]: <> (```)
 
--export([execute/2]).
+[comment]: <> (### Cowboy 2.0 limit by IP)
 
-execute(Req, Env) ->
-  Authorization = cowboy_req:header(<<"authorization">>, Req),
+[comment]: <> (Middleware module:)
 
-  case throttle:check(my_api_rate, Authorization) of
-    {limit_exceeded, _, _} ->
-      lager:warning("Auth ~p exceeded api limit", [Authorization]),
-      Req3 = cowboy_req:reply(429, Req),
-      {stop, Req2};
-    _ ->
-      {ok, Req, Env}
-  end.
-```
+[comment]: <> (``` erlang)
 
-Note that assumes all requests have an authorization header. A more
-realistic approach would be to fallback to an IP limit when
-Authorization is not present.
+[comment]: <> (-module&#40;throttling_middleware&#41;.)
 
-### Cowboy 1.0 limit by IP
+[comment]: <> (-behavior&#40;cowboy_middleware&#41;.)
 
-Middleware module:
+[comment]: <> (-export&#40;[execute/2]&#41;.)
 
-``` erlang
--module(throttling_middleware).
+[comment]: <> (execute&#40;Req, Env&#41; ->)
 
--behavior(cowboy_middleware).
+[comment]: <> (  {{IP, _}, Req2} = cowboy_req:peer&#40;Req&#41;,)
 
--export([execute/2]).
+[comment]: <> (  case throttle:check&#40;my_api_rate, IP&#41; of)
 
-execute(Req, Env) ->
-  {{IP, _}, Req2} = cowboy_req:peer(Req),
+[comment]: <> (    {limit_exceeded, _, _} ->)
 
-  case throttle:check(my_api_rate, IP) of
-    {limit_exceeded, _, _} ->
-      lager:warning("IP ~p exceeded api limit", [IP]),
-      {error, 429, Req2};
-    _ ->
-      {ok, Req2, Env}
-  end.
-```
+[comment]: <> (      lager:warning&#40;"IP ~p exceeded api limit", [IP]&#41;,)
 
-Using it:
+[comment]: <> (      Req3 = cowboy_req:reply&#40;429, Req2&#41;,)
 
-``` erlang
-cowboy:start_http(my_http_listener, 100, [{port, 8080}],
-                    [{env, [{dispatch, Dispatch}]},
-                     {middlewares, [cowboy_router, throttling_middleware, cowboy_handler]}]
-                   ),
-```
+[comment]: <> (      {stop, Req3};)
 
-A more detailed example, choosing the rate based on the path, can be found [here](https://github.com/lambdaclass/holiday_ping/blob/26a3d83faaad6977c936a40fe273cd45954d9259/src/throttling_middleware.erl).
+[comment]: <> (    _ ->)
+
+[comment]: <> (      {ok, Req2, Env})
+
+[comment]: <> (  end.)
+
+[comment]: <> (```)
+
+[comment]: <> (Using it:)
+
+[comment]: <> (``` erlang)
+
+[comment]: <> (cowboy:start_clear&#40;my_http_listener, [{port, 8080}], #{)
+
+[comment]: <> (		env => #{dispatch => Dispatch},)
+
+[comment]: <> (		middlewares => [cowboy_router, throttling_middleware, cowboy_handler])
+
+[comment]: <> (	}&#41;,)
+
+[comment]: <> (```)
+
+[comment]: <> (### Cowboy 2.0 limit by Authorization header)
+
+[comment]: <> (``` erlang)
+
+[comment]: <> (-module&#40;throttling_middleware&#41;.)
+
+[comment]: <> (-behavior&#40;cowboy_middleware&#41;.)
+
+[comment]: <> (-export&#40;[execute/2]&#41;.)
+
+[comment]: <> (execute&#40;Req, Env&#41; ->)
+
+[comment]: <> (  Authorization = cowboy_req:header&#40;<<"authorization">>, Req&#41;,)
+
+[comment]: <> (  case throttle:check&#40;my_api_rate, Authorization&#41; of)
+
+[comment]: <> (    {limit_exceeded, _, _} ->)
+
+[comment]: <> (      lager:warning&#40;"Auth ~p exceeded api limit", [Authorization]&#41;,)
+
+[comment]: <> (      Req3 = cowboy_req:reply&#40;429, Req&#41;,)
+
+[comment]: <> (      {stop, Req2};)
+
+[comment]: <> (    _ ->)
+
+[comment]: <> (      {ok, Req, Env})
+
+[comment]: <> (  end.)
+
+[comment]: <> (```)
+
+[comment]: <> (Note that assumes all requests have an authorization header. A more)
+
+[comment]: <> (realistic approach would be to fallback to an IP limit when)
+
+[comment]: <> (Authorization is not present.)
+
+[comment]: <> (### Cowboy 1.0 limit by IP)
+
+[comment]: <> (Middleware module:)
+
+[comment]: <> (``` erlang)
+
+[comment]: <> (-module&#40;throttling_middleware&#41;.)
+
+[comment]: <> (-behavior&#40;cowboy_middleware&#41;.)
+
+[comment]: <> (-export&#40;[execute/2]&#41;.)
+
+[comment]: <> (execute&#40;Req, Env&#41; ->)
+
+[comment]: <> (  {{IP, _}, Req2} = cowboy_req:peer&#40;Req&#41;,)
+
+[comment]: <> (  case throttle:check&#40;my_api_rate, IP&#41; of)
+
+[comment]: <> (    {limit_exceeded, _, _} ->)
+
+[comment]: <> (      lager:warning&#40;"IP ~p exceeded api limit", [IP]&#41;,)
+
+[comment]: <> (      {error, 429, Req2};)
+
+[comment]: <> (    _ ->)
+
+[comment]: <> (      {ok, Req2, Env})
+
+[comment]: <> (  end.)
+
+[comment]: <> (```)
+
+[comment]: <> (Using it:)
+
+[comment]: <> (``` erlang)
+
+[comment]: <> (cowboy:start_http&#40;my_http_listener, 100, [{port, 8080}],)
+
+[comment]: <> (                    [{env, [{dispatch, Dispatch}]},)
+
+[comment]: <> (                     {middlewares, [cowboy_router, throttling_middleware, cowboy_handler]}])
+
+[comment]: <> (                   &#41;,)
+
+[comment]: <> (```)
+
+[comment]: <> (A more detailed example, choosing the rate based on the path, can be found [here]&#40;https://github.com/lambdaclass/holiday_ping/blob/26a3d83faaad6977c936a40fe273cd45954d9259/src/throttling_middleware.erl&#41;.)
