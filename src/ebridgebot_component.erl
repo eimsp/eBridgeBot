@@ -4,8 +4,16 @@
 -include("ebridgebot.hrl").
 
 %% API
--export([init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
+-export([start/2, start_link/1, start_link/2, init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
 	state/1, state/2, pid/1, filter_pred/1]).
+
+start(BotId, Args) ->
+	escalus_component:start({local, BotId}, ebridgebot_component, Args, Args).
+
+start_link(BotId, Args) ->
+	start_link([{bot_id, BotId} | Args]).
+start_link(Args) ->
+	escalus_component:start_link(?MODULE, Args, Args).
 
 init(Args) ->
 	[BotId, BotName, Component, Nick, Rooms, Module] =
