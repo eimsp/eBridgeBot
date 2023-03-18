@@ -8,7 +8,7 @@
 	state/1, state/2, pid/1, filter_pred/1]).
 
 start(BotId, Args) ->
-	escalus_component:start({local, BotId}, ebridgebot_component, Args, Args).
+	escalus_component:start({local, BotId}, ebridgebot_component, Args, [{bot_id, BotId} | Args]).
 
 start_link(BotId, Args) ->
 	start_link([{bot_id, BotId} | Args]).

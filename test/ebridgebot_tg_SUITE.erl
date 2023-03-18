@@ -35,8 +35,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(CaseName, Config) ->
 	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
-	Args = [{bot_id, BotId},
-		{component, escalus_ct:get_config(ejabberd_service)},
+	Args = [{component, escalus_ct:get_config(ejabberd_service)},
 		{host, escalus_ct:get_config(ejabberd_addr)},
 		{password, escalus_ct:get_config(ejabberd_service_password)},
 		{port, escalus_ct:get_config(ejabberd_service_port)},
@@ -57,7 +56,7 @@ init_per_testcase(CaseName, Config) ->
 				 fun(#{rooms := [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
 		 ok
 	 end || {_, Opts} <- Rooms],
-	[{component_pid, Pid} | Args ++ escalus:init_per_testcase(CaseName, Config)].
+	[{component_pid, Pid}, {bot_id, BotId} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
 
 end_per_testcase(CaseName, Config) ->
