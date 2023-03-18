@@ -147,9 +147,6 @@ process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{r
 	Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
 	ebridgebot:write_link(BotId, OriginId, Uid),
 	{ok, State};
-
-process_stanza(#moderate{sub_els = [#retract{} | _]}, [_ | _] = Args) ->
-	process_stanza(#apply_to{sub_els = [#retract{}]}, Args); %% retract message from xmpp groupchat by moderator
 process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
 	#{bot_id := BotId, module := Module} = State | _]) -> %% retract message from xmpp groupchat
 	?dbg("retract: ~p", [Pkt]),
@@ -158,7 +155,7 @@ process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = g
 	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- ebridgebot:index_read(BotId, Uid, #xmpp_link.uid)],
 	{ok, State};
 process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | _] = S)
-	when is_record(Tag, replace); is_record(Tag, apply_to); is_record(Tag, moderate) -> %% edit message from xmpp groupchat
+	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edit message from xmpp groupchat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
 	OriginId = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
