@@ -93,10 +93,20 @@ edit_msg(From, To, Text, ReplaceId) ->
 
 -spec write_link(atom(), binary(), any()) -> ok.
 write_link(BotId, OriginId, Uid) ->
-	mnesia:dirty_write(setelement(1, #xmpp_link{origin_id = OriginId, uid = Uid}, ebridgebot:bot_table(BotId))).
+	write_link(BotId, OriginId, Uid, []).
 
--spec upd_links(atom(), binary(), binary()) -> ok.
-upd_links(BotId, OriginId, MamId) ->
+-spec write_link(atom(), binary(), any(), #mam_archived{} | binary() | false | []) -> ok.
+write_link(BotId, OriginId, Uid, #mam_archived{id = MamId}) ->
+	write_link(BotId, OriginId, Uid, MamId);
+write_link(BotId, OriginId, Uid, false) ->
+	write_link(BotId, OriginId, Uid);
+write_link(BotId, OriginId, Uid, MamId) ->
+	mnesia:dirty_write(setelement(1, #xmpp_link{origin_id = OriginId, mam_id = MamId, uid = Uid}, ebridgebot:bot_table(BotId))).
+
+-spec upd_links(atom(), binary(), false | #mam_archived{}) -> ok.
+upd_links(BotId, OriginId, false) ->
+	index_read(BotId, OriginId, #xmpp_link.origin_id);
+upd_links(BotId, OriginId, #mam_archived{id = MamId}) ->
 	Table = ebridgebot:bot_table(BotId),
 	Links = index_read(BotId, OriginId, #xmpp_link.origin_id),
 	[mnesia:dirty_write(setelement(1, Link#xmpp_link{mam_id = MamId}, Table)) || Link <- Links].
