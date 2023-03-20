@@ -24,7 +24,7 @@ init(Args) ->
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
 		[{attributes, record_info(fields, xmpp_link)},
-			{index, [origin_id, uid]},
+			{index, [origin_id, mam_id, uid]},
 			{disc_copies, [node()]}]),
 
 	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
@@ -44,7 +44,7 @@ handle_info(stop_link_scheduler, _Client, #{link_scheduler_ref := TRef} = State)
 	{ok, maps:remove(link_scheduler_ref, State)};
 handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
 	?dbg("remove_old_links", []),
-	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
+	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
 	[mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)],
 	{ok, State};
 

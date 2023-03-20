@@ -12,4 +12,5 @@
 -record(xmpp_link, {
 	time = erlang:system_time(microsecond) :: integer(),
 	origin_id = [] :: binary(),
+	mam_id = [] :: binary(),
 	uid = [] :: any()}).

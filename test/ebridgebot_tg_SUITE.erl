@@ -178,8 +178,8 @@ link_scheduler_story(Config) ->
 	%% add 3 messages with different time of creation
 	Table = ebridgebot:bot_table(BotId),
 	ebridgebot:write_link(BotId, ebridgebot:gen_uuid(), Uid = #tg_id{chat_id = ChatId, id = MessageId = 1}),
-	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 2000000, ebridgebot:gen_uuid(), Uid2 = Uid#tg_id{id = MessageId + 1}}),
-	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 800000, ebridgebot:gen_uuid(), Uid2#tg_id{id = MessageId + 1}}),
+	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 2000000, ebridgebot:gen_uuid(), [], Uid2 = Uid#tg_id{id = MessageId + 1}}),
+	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 800000, ebridgebot:gen_uuid(), [], Uid2#tg_id{id = MessageId + 1}}),
 
 	Pid ! {link_scheduler, 200, 1000}, %% start new scheduler
 	%% to make sure that the messages are deleted one by one
