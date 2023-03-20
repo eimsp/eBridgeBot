@@ -91,15 +91,15 @@ muc_story(Config) ->
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 1),
-			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}] =
-				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
+			[#xmpp_link{origin_id = OriginId, uid = TgUid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 
 			AlicePkt2 = #message{type = groupchat, to = RoomJID = jid:decode(RoomJid), body = [#text{data = AliceMsg2}], %% edit message from xmpp
 				sub_els = [#replace{id = OriginId}, #origin_id{id = OriginId2 = ebridgebot:gen_uuid()}]},
 			escalus:send(Alice, xmpp:encode(AlicePkt2)),
 			escalus:assert(is_groupchat_message, [AliceMsg2], escalus:wait_for_stanza(Alice)),
-			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{chat_id = ChatId, id = MessageId}}, %% add edit link to bot link table
-				#xmpp_link{xmpp_id = OriginId2, uid = TgUid = #tg_id{}}] =
+			[#xmpp_link{origin_id = OriginId, uid = TgUid = #tg_id{chat_id = ChatId, id = MessageId}}, %% add edit link to bot link table
+				#xmpp_link{origin_id = OriginId2, uid = TgUid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
 
 			AliceRetractPkt = #message{type = groupchat, to = RoomJID, %% retract from xmpp client
@@ -149,8 +149,8 @@ subscribe_muc_story(Config) ->
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 1),
-			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{id = MessageId}}] =
-				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
+			[#xmpp_link{origin_id = OriginId, uid = TgUid = #tg_id{id = MessageId}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 
 			TgAliceMsg = <<"Hello from telegram!">>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram

@@ -24,7 +24,7 @@ init(Args) ->
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
 		[{attributes, record_info(fields, xmpp_link)},
-			{index, [xmpp_id, uid]},
+			{index, [origin_id, uid]},
 			{disc_copies, [node()]}]),
 
 	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
@@ -136,7 +136,7 @@ process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #{} = State | _]) ->
 	%% TODO not implemented
 	{ok, State};
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{bot_id := BotId} = State | _]) ->
-	case ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
+	case ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) of
 		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
@@ -159,7 +159,7 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
 	OriginId = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
-	Links = ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id),
+	Links = ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id),
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid} | _] ->
 			 process_stanza(Tag, [{uid, Uid} | S]);

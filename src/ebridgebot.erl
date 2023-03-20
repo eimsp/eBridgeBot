@@ -94,7 +94,7 @@ edit_msg(From, To, Text, ReplaceId) ->
 -spec write_link(atom(), binary(), any()) -> ok.
 write_link(BotId, OriginId, Uid) ->
 	mnesia:dirty_write(
-		setelement(1, #xmpp_link{xmpp_id = OriginId, uid = Uid}, ebridgebot:bot_table(BotId))).
+		setelement(1, #xmpp_link{origin_id = OriginId, uid = Uid}, ebridgebot:bot_table(BotId))).
 
 -spec index_read(binary(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
 index_read(BotId, Key, Attr) ->
