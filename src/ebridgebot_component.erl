@@ -24,7 +24,7 @@ init(Args) ->
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
 		[{attributes, record_info(fields, xmpp_link)},
-			{index, [xmpp_id, uid]},
+			{index, [origin_id, mam_id, uid]},
 			{disc_copies, [node()]}]),
 
 	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
@@ -44,7 +44,7 @@ handle_info(stop_link_scheduler, _Client, #{link_scheduler_ref := TRef} = State)
 	{ok, maps:remove(link_scheduler_ref, State)};
 handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
 	?dbg("remove_old_links", []),
-	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
+	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
 	[mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)],
 	{ok, State};
 
@@ -69,7 +69,7 @@ handle_info({event, SubAction, MucJid} = Info, Client, #{component := Component,
 	{ok, State};
 handle_info({linked_rooms, Type, Action} = Info, Client, #{rooms := Rooms} = State) when Type == presence; Type == event ->
 	?dbg("handle: ~p", [Info]),
-	escalus_connection:set_filter_predicate(Client, filter_pred(State)),
+%%	escalus_connection:set_filter_predicate(Client, filter_pred(State)),
 	{I, Prev, Next} =
 		case {Type, Action} of
 			{presence, available} -> {1, out, pending};
@@ -136,7 +136,7 @@ process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #{} = State | _]) ->
 	%% TODO not implemented
 	{ok, State};
 process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{bot_id := BotId} = State | _]) ->
-	case ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id) of
+	case ebridgebot:upd_links(BotId, OriginId, xmpp:get_subtag(Pkt, #mam_archived{})) of
 		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
@@ -145,8 +145,11 @@ process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{r
 	?dbg("replace: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
-	ebridgebot:write_link(BotId, OriginId, Uid),
+	ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
 	{ok, State};
+process_stanza(#apply_to{sub_els = [#moderated{sub_els = [#retract{} | _]}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
+	?dbg("moderator retract: ~p", [Pkt]),
+	process_stanza(#apply_to{sub_els = [#retract{}]}, Args);
 process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
 	#{bot_id := BotId, module := Module} = State | _]) -> %% retract message from xmpp groupchat
 	?dbg("retract: ~p", [Pkt]),
@@ -158,8 +161,9 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edit message from xmpp groupchat
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
-	OriginId = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
-	Links = ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id),
+	Id = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
+	Attr = case Tag of #apply_to{sub_els = [#moderated{}]} -> #xmpp_link.mam_id; _ -> #xmpp_link.origin_id end,
+	Links = ebridgebot:index_read(BotId, Id, Attr),
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid} | _] ->
 			 process_stanza(Tag, [{uid, Uid} | S]);
@@ -175,7 +179,7 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 	?dbg("send to third party client: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	[case Module:send_message(State#{chat_id => ChatId}, <<Nick/binary, ":\n", Text/binary>>) of
-		 {ok, Uid} -> ebridgebot:write_link(BotId, OriginId, Uid);
+		 {ok, Uid} -> ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{}));
 		 Err -> Err
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};

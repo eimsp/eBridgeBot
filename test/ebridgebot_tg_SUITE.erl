@@ -13,13 +13,15 @@
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
+-define(NS_MSG_MODERATE, <<"urn:xmpp:message-moderate:0">>).
+
 -import(ebridgebot, [wait_for_result/2, wait_for_result/4, wait_for_list/1, wait_for_list/2]).
 
 all() ->
 	[{group, main}].
 
 groups() ->
-	MainStories = [muc_story, subscribe_muc_story, link_scheduler_story],
+	MainStories = [muc_story, subscribe_muc_story, link_scheduler_story, moderate_story],
 	[{main, [sequence], MainStories}, {local, [sequence], MainStories}].
 
 init_per_suite(Config) ->
@@ -45,7 +47,8 @@ init_per_testcase(CaseName, Config) ->
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
 	[begin
 		 [Room, ChatId] = [proplists:get_value(K, Opts) || K <- [name, chat_id]],
-
+%%		 catch mod_muc_admin:destroy_room(Room, MucHost), %% TODO uncomment to destroy room
+%%		 timer:sleep(100),
 		 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
 		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
 
@@ -91,15 +94,15 @@ muc_story(Config) ->
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 1),
-			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{}}] =
-				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
-
+			[#xmpp_link{origin_id = OriginId, uid = TgUid = #tg_id{}, mam_id = MamId}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
+			?assert(is_binary(MamId)),
 			AlicePkt2 = #message{type = groupchat, to = RoomJID = jid:decode(RoomJid), body = [#text{data = AliceMsg2}], %% edit message from xmpp
 				sub_els = [#replace{id = OriginId}, #origin_id{id = OriginId2 = ebridgebot:gen_uuid()}]},
 			escalus:send(Alice, xmpp:encode(AlicePkt2)),
 			escalus:assert(is_groupchat_message, [AliceMsg2], escalus:wait_for_stanza(Alice)),
-			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{chat_id = ChatId, id = MessageId}}, %% add edit link to bot link table
-				#xmpp_link{xmpp_id = OriginId2, uid = TgUid = #tg_id{}}] =
+			[#xmpp_link{origin_id = OriginId, uid = TgUid = #tg_id{chat_id = ChatId, id = MessageId}}, %% add edit link to bot link table
+				#xmpp_link{origin_id = OriginId2, uid = TgUid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
 
 			AliceRetractPkt = #message{type = groupchat, to = RoomJID, %% retract from xmpp client
@@ -113,9 +116,9 @@ muc_story(Config) ->
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId +1},
-			[#xmpp_link{uid = TgUid2}] =
+			[#xmpp_link{uid = TgUid2, mam_id = MamId2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
-
+			?assert(is_binary(MamId2)),
 			%% emulate editing message from Telegram
 			Pid ! {pe4kin_update, BotName, tg_message(<<"edited_message">>, ChatId, MessageId + 1, AliceNick, TgAliceMsg2)},
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
@@ -149,21 +152,67 @@ subscribe_muc_story(Config) ->
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[_] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 1),
-			[#xmpp_link{xmpp_id = OriginId, uid = TgUid = #tg_id{id = MessageId}}] =
-				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.xmpp_id) end, 1),
-
+			[#xmpp_link{origin_id = OriginId, uid = TgUid = #tg_id{id = MessageId}, mam_id = MamId}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
+			true = is_binary(MamId),
 			TgAliceMsg = <<"Hello from telegram!">>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId + 1},
-			[#xmpp_link{uid = TgUid2}] =
+			[#xmpp_link{uid = TgUid2, mam_id = _MamId2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
-
+%%			true = is_binary(MamId2),
 			Pid ! {remove_old_links, CreateTime}, %% does not remove any link
 			[_, _] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end, 2),
 
 			Pid ! {remove_old_links, erlang:system_time(microsecond)}, %% removes all links
 			[] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end),
+
+			destroy_room(Config),
+			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
+			ok
+		end).
+
+moderate_story(Config) ->
+	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
+	MucHost = escalus_config:get_ct(muc_host),
+	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
+	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	escalus:story(Config, [{alice, 1}],
+		fun(#client{jid = AliceJid} = Alice) ->
+			DiscoInfoIq = #xmlel{attrs = Attrs} =
+				escalus_stanza:iq_get(?NS_DISCO_INFO, []),
+			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}), %% TODO set Alice as moderator
+			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+			true = lists:member(?NS_MSG_MODERATE, Features),
+
+			enter_room(Alice, RoomJid, AliceNick),
+			escalus_client:wait_for_stanzas(Alice, 2),
+
+			AliceMsg = <<"Hi, bot!">>, ComponentMsg = <<"Hi, Alice!">>,
+			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
+			escalus:send(Alice, xmpp:encode(AlicePkt)),
+			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
+			[#xmpp_link{origin_id = OriginId, uid = #tg_id{id = MessageId}, mam_id = MamId}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
+
+			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, ComponentMsg)}, %% emulate sending message from Telegram
+			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", ComponentMsg/binary>>], Pkt = escalus:wait_for_stanza(Alice)),
+			#mam_archived{id = MamId2} = xmpp:get_subtag(xmpp:decode(Pkt), #mam_archived{}),
+			AliceModerateIq =
+				#iq{type = set, from = jid:decode(AliceJid), to = RoomJID = jid:decode(RoomJid),
+					sub_els = [#apply_to{id = MamId2,
+						sub_els = [#moderate{
+							sub_els =
+						[#retract{}, #jingle_reason{text = [#text{data = <<"removed by admin">>}]}]}]}]},
+			escalus:send(Alice, xmpp:encode(AliceModerateIq)),
+			escalus:assert(is_iq_result, escalus:wait_for_stanza(Alice)),
+			RoomAliceNick = jid:replace_resource(RoomJID, AliceNick),
+			#apply_to{sub_els = [#moderated{by = RoomAliceNick}]} =
+				xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #apply_to{}),
+			[] = wait_for_list(fun() -> ebridgebot:index_read(BotId, MamId2, #xmpp_link.mam_id) end),
+			[_] = ebridgebot:index_read(BotId, MamId, #xmpp_link.mam_id),
 
 			destroy_room(Config),
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
@@ -178,8 +227,8 @@ link_scheduler_story(Config) ->
 	%% add 3 messages with different time of creation
 	Table = ebridgebot:bot_table(BotId),
 	ebridgebot:write_link(BotId, ebridgebot:gen_uuid(), Uid = #tg_id{chat_id = ChatId, id = MessageId = 1}),
-	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 2000000, ebridgebot:gen_uuid(), Uid2 = Uid#tg_id{id = MessageId + 1}}),
-	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 800000, ebridgebot:gen_uuid(), Uid2#tg_id{id = MessageId + 1}}),
+	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 2000000, ebridgebot:gen_uuid(), [], Uid2 = Uid#tg_id{id = MessageId + 1}}),
+	mnesia:dirty_write({Table, erlang:system_time(microsecond) - 800000, ebridgebot:gen_uuid(), [], Uid2#tg_id{id = MessageId + 1}}),
 
 	Pid ! {link_scheduler, 200, 1000}, %% start new scheduler
 	%% to make sure that the messages are deleted one by one

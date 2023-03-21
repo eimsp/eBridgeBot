@@ -48,7 +48,7 @@ handle_info({pe4kin_update, BotName,
 	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("edit tg msg groupchat: ~p", [TgMsg]),
 	[case ebridgebot:index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
-		 [#xmpp_link{xmpp_id = ReplaceId} | _] ->
+		 [#xmpp_link{origin_id = ReplaceId} | _] ->
 			 Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
 			 escalus:send(Client, xmpp:encode(Pkt)),
 			 ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
