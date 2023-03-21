@@ -1,15 +1,15 @@
 -module(ebridgebot_tg_SUITE).
--author("cryoflamer").
 -compile(export_all).
+
 %% API
 -export([]).
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("escalus/include/escalus.hrl").
--include_lib("escalus/include/escalus_xmlns.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("exml/include/exml.hrl").
 -include_lib("xmpp/include/xmpp_codec.hrl").
+-include_lib("xmpp/include/ns.hrl").
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
@@ -21,7 +21,7 @@ all() ->
 	[{group, main}].
 
 groups() ->
-	MainStories = [muc_story, subscribe_muc_story, link_scheduler_story, moderate_story],
+	MainStories = [muc_story, subscribe_muc_story, link_scheduler_story, moderate_story, upload_story],
 	[{main, [sequence], MainStories}, {local, [sequence], MainStories}].
 
 init_per_suite(Config) ->
@@ -236,6 +236,21 @@ link_scheduler_story(Config) ->
 	Pid ! stop_link_scheduler, %% start new scheduler
 	false = maps:is_key(link_scheduler_ref, ebridgebot_component:state(Pid)), %% to make sure that scheduler is stopped
 	Config.
+
+upload_story(Config) ->
+	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
+	[MucHost, UploadHost] = [escalus_config:get_ct(K) || K <- [muc_host, upload_host]],
+	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
+	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	escalus:story(Config, [{alice, 1}],
+		fun(#client{jid = AliceJid} = Alice) ->
+			DiscoInfoIq = #iq{type = get, sub_els = [#disco_info{}], to = jid:decode(UploadHost)},
+			escalus:send(Alice, xmpp:encode(DiscoInfoIq)),
+			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+			[true = lists:member(NS, Features) || NS <- [?NS_HTTP_UPLOAD_0, ?NS_HTTP_UPLOAD, ?NS_HTTP_UPLOAD_OLD]],
+			ok
+		end).
 
 %% tg API
 tg_message(ChatId, MessageId, Username, Text) ->
