@@ -102,20 +102,27 @@ handle_info(Info, _Client, State) ->
 
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
-%%process_stanza(#iq{id = IqId, type = result, from = #jid{server = UploadHost} = CurMucJID, to = #jid{server = ComponentJid} = To,
-process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost} = CurMucJID, to = #jid{server = ComponentJid} = To,
+process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost}, to = #jid{server = ComponentJid},
 	sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} = IQ,
-	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State) ->
-	#{FileId := PutFun} = Upload,
-	?dbg("!!iq: ~p", [IQ]),
-%%	D = [FileId, CurChatId, Nick] = binary:split(IqId, <<";">>, [global]),
-	{ok, Data} = ebridgebot_tg:get_file(State#{file_id => FileId}),
-%%	?dbg("data: ~p", [D]),
-%%	?dbg("data: ~s", [Data]),
-	PutFun(Data, PutURL),
-%%	{ok, {{"HTTP/1.1", 201, _}, _, _}} =
-%%		httpc:request(put, {binary_to_list(PutURL), [], ?CONTENT_TYPE, Data}, [], []),
-	{ok, State};
+	Client,
+	#{module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
+	when is_map_key(FileId, Upload) ->
+	#{FileId := {ContentType, Nick, RoomJids, Caption}} = Upload,
+	?dbg("slot for upload: ~p", [IQ]),
+	try
+		{ok, Data} = Module:get_file(State#{file_id => FileId}),
+		{ok, {{"HTTP/1.1", 201, _}, _, _}} =
+			httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], []),
+		[begin
+			 Id = ebridgebot:gen_uuid(),
+			 escalus:send(Client, xmpp:encode(#message{id = Id, type = groupchat, from = jid:decode(ComponentJid), to = jid:decode(MucJid),
+				 body = [#text{data = <<Nick/binary, ":\n",Caption/binary,"\n", GetURL/binary>>}], sub_els = [#origin_id{id = ebridgebot:gen_uuid()}]}))
+		 end || MucJid <- RoomJids]
+	catch
+		E : R ->
+			?dbg("ERROR:~p: ~p", [E, R])
+	end,
+	{ok, State#{upload => maps:remove(FileId, Upload)}};
 process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{server = ComponentJid} = To} = Pkt,
 	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid} = State) when Type == available; Type == unavailable ->
 	?dbg("presence: ~p", [Pkt]),
