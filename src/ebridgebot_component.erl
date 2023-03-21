@@ -19,6 +19,7 @@ init(Args) ->
 	[BotId, BotName, Component, Nick, Rooms, Module] =
 		[proplists:get_value(K, Args) ||
 			K <- [bot_id, name, component, nick, linked_rooms, module]],
+	UploadHost = proplists:get_value(upload_host, Args, <<"upload.localhost">>),
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
 
 	application:start(mnesia),
@@ -30,7 +31,7 @@ init(Args) ->
 	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
 
 	{ok, State} = Module:init(Args),
-	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module}}.
+	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module, upload_host => UploadHost}}.
 
 handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% TimeInterval and LifeSpan in milliseconds
 	?dbg("link_scheduler", []),
