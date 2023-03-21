@@ -40,6 +40,7 @@ init_per_testcase(CaseName, Config) ->
 	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
 	Args = [{component, escalus_ct:get_config(ejabberd_service)},
 		{host, escalus_ct:get_config(ejabberd_addr)},
+		{upload_host, escalus_ct:get_config(upload_host)},
 		{password, escalus_ct:get_config(ejabberd_service_password)},
 		{port, escalus_ct:get_config(ejabberd_service_port)},
 		{linked_rooms, []}] ++ BotArgs,
@@ -261,11 +262,11 @@ upload_story(Config) ->
 				 end || X <- Xs, NS <- namespaces()]),
 			ct:comment("Get max sizes for namespaces: ~p", [Sizes]),
 			Size = p1_rand:uniform(1, 1024),
-			SlotIq = #iq{type = get, to = UploadJID,
+			SlotIq = #iq{id = Id = ebridgebot:gen_uuid(), type = get, to = UploadJID,
 				sub_els = [#upload_request_0{filename = filename(), size = Size, 'content-type' = <<?CONTENT_TYPE>>, xmlns = ?NS_HTTP_UPLOAD_0}]},
 
 			escalus:send(Alice, xmpp:encode(SlotIq)),
-			#iq{type = result, sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} =
+			#iq{id = Id, type = result, sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} =
 				xmpp:decode(escalus:wait_for_stanza(Alice)),
 			Data = p1_rand:bytes(Size),
 			ct:comment("Putting ~B bytes to ~s", [size(Data), PutURL]),
