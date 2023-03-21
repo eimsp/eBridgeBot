@@ -4,6 +4,8 @@
 		_ -> false
 	end).
 
+-define(err(Fmt, Args), error_logger:error_msg(Fmt, Args)).
+
 -record(muc_state, {
 	group_id = [] :: any(),
 	muc_jid = [] :: binary(),

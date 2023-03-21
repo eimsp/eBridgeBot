@@ -67,11 +67,10 @@ handle_info({pe4kin_update, BotName,
 				  <<"file_size">> := FileSize,
 				  <<"mime_type">> := ContentType},
 		  <<"from">> :=
-				#{<<"language_code">> := Lang,
+				#{<<"language_code">> := _Lang,
 				  <<"username">> := TgUserName},
 		  <<"message_id">> := Id}} = TgMsg}, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component,
-		token := Token, upload_host := UploadHost, upload := Upload} = State)
+	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State)
 	when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("tg msg upload: ~p", [TgMsg]),
 	case [MucJid || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
@@ -102,7 +101,7 @@ send_message(#{bot_name := BotName, chat_id := ChatId}, Text) ->
 		{ok, #{<<"message_id">> := Id}} ->
 			{ok, #tg_id{chat_id = ChatId, id = Id}};
 		Err ->
-			?dbg("ERROR: send_message: ~p", [Err]),
+			?err("ERROR: send_message: ~p", [Err]),
 			Err
 	end.
 
@@ -111,7 +110,7 @@ edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id}}, T
 		{ok, _} ->
 			{ok, #tg_id{chat_id = ChatId, id = Id}};
 		Err ->
-			?dbg("ERROR: : edit_message: ~p", [Err]),
+			?err("ERROR: : edit_message: ~p", [Err]),
 			Err
 	end.
 
@@ -120,7 +119,7 @@ delete_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id}})
 		{ok, true} ->
 			{ok, #tg_id{chat_id = ChatId, id = Id}};
 		Err ->
-			?dbg("ERROR: ~p", [Err]),
+			?err("ERROR: ~p", [Err]),
 			Err
 	end.
 
@@ -129,8 +128,8 @@ get_file(#{file_id := FileId, bot_name := BotName, token := Token}) ->
 	case pe4kin_http:get(<<"/file/bot", Token/binary, "/", FilePath/binary>>) of
 		{200, _, Data} -> {ok, Data};
 		{_ErrCode, _, _Reason} = Err ->
-			?dbg("ERROR: ~p", [Err]),
-			{error, get_file}
+			?err("ERROR: ~p", [Err]),
+			{error, invalid_get_file}
 	end.
 
 link_pred(#{group_id := ChatId}) -> %% filter link predicate

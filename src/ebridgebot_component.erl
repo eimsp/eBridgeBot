@@ -121,7 +121,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 		 end || MucJid <- RoomJids]
 	catch
 		E : R ->
-			?dbg("ERROR:~p: ~p", [E, R])
+			?err("ERROR:~p: ~p", [E, R])
 	end,
 	{ok, State#{upload => maps:remove(FileId, Upload)}};
 process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{server = ComponentJid} = To} = Pkt,
@@ -212,7 +212,7 @@ process_stanza([#message{} = Pkt, #{} = State | _]) ->
 	{ok, State}.
 
 terminate(Reason, State) ->
-	?dbg("terminate/2:\n~p", [{Reason, State}]),
+	?err("terminate/2:\n~p", [{Reason, State}]),
 	ok.
 
 %% component API
