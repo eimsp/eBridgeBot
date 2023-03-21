@@ -31,7 +31,8 @@ init(Args) ->
 	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
 
 	{ok, State} = Module:init(Args),
-	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick, rooms => NewRooms, module => Module, upload_host => UploadHost}}.
+	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick,
+		rooms => NewRooms, module => Module, upload_host => UploadHost, upload => #{}}}.
 
 handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% TimeInterval and LifeSpan in milliseconds
 	?dbg("link_scheduler", []),
@@ -101,6 +102,20 @@ handle_info(Info, _Client, State) ->
 
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
+%%process_stanza(#iq{id = IqId, type = result, from = #jid{server = UploadHost} = CurMucJID, to = #jid{server = ComponentJid} = To,
+process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost} = CurMucJID, to = #jid{server = ComponentJid} = To,
+	sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} = IQ,
+	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State) ->
+	#{FileId := PutFun} = Upload,
+	?dbg("!!iq: ~p", [IQ]),
+%%	D = [FileId, CurChatId, Nick] = binary:split(IqId, <<";">>, [global]),
+	{ok, Data} = ebridgebot_tg:get_file(State#{file_id => FileId}),
+%%	?dbg("data: ~p", [D]),
+%%	?dbg("data: ~s", [Data]),
+	PutFun(Data, PutURL),
+%%	{ok, {{"HTTP/1.1", 201, _}, _, _}} =
+%%		httpc:request(put, {binary_to_list(PutURL), [], ?CONTENT_TYPE, Data}, [], []),
+	{ok, State};
 process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{server = ComponentJid} = To} = Pkt,
 	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid} = State) when Type == available; Type == unavailable ->
 	?dbg("presence: ~p", [Pkt]),
