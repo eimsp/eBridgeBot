@@ -259,7 +259,7 @@ upload_story(Config) ->
 						 {NS, erlang:binary_to_integer(Size)};
 					 _ -> []
 				 end || X <- Xs, NS <- namespaces()]),
-			ct:pal("sizes: ~p", [Sizes]),
+			ct:comment("Get max sizes for namespaces: ~p", [Sizes]),
 			Size = p1_rand:uniform(1, 1024),
 			SlotIq = #iq{type = get, to = UploadJID,
 				sub_els = [#upload_request_0{filename = filename(), size = Size, 'content-type' = <<?CONTENT_TYPE>>, xmlns = ?NS_HTTP_UPLOAD_0}]},
@@ -267,14 +267,15 @@ upload_story(Config) ->
 			escalus:send(Alice, xmpp:encode(SlotIq)),
 			#iq{type = result, sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} =
 				xmpp:decode(escalus:wait_for_stanza(Alice)),
-			ct:pal("slot: ~p\n~p", [GetURL, PutURL]),
 			Data = p1_rand:bytes(Size),
+			ct:comment("Putting ~B bytes to ~s", [size(Data), PutURL]),
 			{ok, {{"HTTP/1.1", 201, _}, _, _}} =
 				httpc:request(put, {binary_to_list(PutURL), [], ?CONTENT_TYPE, Data}, [], []),
 
+			ct:comment("Getting ~B bytes from ~s", [size(Data), PutURL]),
 			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 				httpc:request(get, {binary_to_list(GetURL), []}, [], [{body_format, binary}]),
-			ct:pal("get: ~p\n~p", [GetURL, Data]),
+			ct:comment("Checking returned body"),
 			ok
 		end).
 
