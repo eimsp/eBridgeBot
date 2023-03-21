@@ -14,6 +14,7 @@
 -include("ebridgebot_tg.hrl").
 
 -define(NS_MSG_MODERATE, <<"urn:xmpp:message-moderate:0">>).
+-define(CONTENT_TYPE, "image/png").
 
 -import(ebridgebot, [wait_for_result/2, wait_for_result/4, wait_for_list/1, wait_for_list/2]).
 
@@ -245,10 +246,35 @@ upload_story(Config) ->
 	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = AliceJid} = Alice) ->
-			DiscoInfoIq = #iq{type = get, sub_els = [#disco_info{}], to = jid:decode(UploadHost)},
+			DiscoInfoIq = #iq{type = get, sub_els = [#disco_info{}], to = UploadJID = jid:decode(UploadHost)},
 			escalus:send(Alice, xmpp:encode(DiscoInfoIq)),
-			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
-			[true = lists:member(NS, Features) || NS <- [?NS_HTTP_UPLOAD_0, ?NS_HTTP_UPLOAD, ?NS_HTTP_UPLOAD_OLD]],
+			#iq{sub_els = [#disco_info{xdata = Xs, features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+			[true = lists:member(NS, Features) || NS <- namespaces()],
+
+			Sizes = lists:flatten(
+				[case xmpp_util:get_xdata_values(<<"FORM_TYPE">>, X) of
+					 [NS] ->
+						 [Size] = xmpp_util:get_xdata_values(<<"max-file-size">>, X),
+						 true = erlang:binary_to_integer(Size) > 0,
+						 {NS, erlang:binary_to_integer(Size)};
+					 _ -> []
+				 end || X <- Xs, NS <- namespaces()]),
+			ct:pal("sizes: ~p", [Sizes]),
+			Size = p1_rand:uniform(1, 1024),
+			SlotIq = #iq{type = get, to = UploadJID,
+				sub_els = [#upload_request_0{filename = filename(), size = Size, 'content-type' = <<?CONTENT_TYPE>>, xmlns = ?NS_HTTP_UPLOAD_0}]},
+
+			escalus:send(Alice, xmpp:encode(SlotIq)),
+			#iq{type = result, sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} =
+				xmpp:decode(escalus:wait_for_stanza(Alice)),
+			ct:pal("slot: ~p\n~p", [GetURL, PutURL]),
+			Data = p1_rand:bytes(Size),
+			{ok, {{"HTTP/1.1", 201, _}, _, _}} =
+				httpc:request(put, {binary_to_list(PutURL), [], ?CONTENT_TYPE, Data}, [], []),
+
+			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
+				httpc:request(get, {binary_to_list(GetURL), []}, [], [{body_format, binary}]),
+			ct:pal("get: ~p\n~p", [GetURL, Data]),
 			ok
 		end).
 
@@ -291,3 +317,9 @@ groupchat_presence(From, To, Nick, Type) when is_binary(From), is_binary(To) ->
 enter_room(Client, RoomJid, Nick) ->
 	escalus:send(Client, groupchat_presence(Client, RoomJid, Nick)),
 	escalus_client:wait_for_stanzas(Client, 2). %% Client wait for 2 presences from ChatRoom
+
+namespaces() ->
+	[?NS_HTTP_UPLOAD_0, ?NS_HTTP_UPLOAD, ?NS_HTTP_UPLOAD_OLD].
+
+filename() ->
+	<<(p1_rand:get_string())/binary, ".png">>.
