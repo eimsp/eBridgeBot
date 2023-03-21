@@ -65,7 +65,6 @@ handle_info({pe4kin_update, BotName,
 				#{<<"file_id">> := FileId,
 				  <<"file_name">> := FileName,
 				  <<"file_size">> := FileSize,
-				  <<"file_unique_id">> := FileUniqueId,
 				  <<"mime_type">> := ContentType},
 		  <<"from">> :=
 				#{<<"language_code">> := Lang,
@@ -82,7 +81,7 @@ handle_info({pe4kin_update, BotName,
 			SlotIq = #iq{id = FileId, type = get, from = jid:decode(Component), to = jid:decode(UploadHost),
 				sub_els = [#upload_request_0{filename = FileName, size = FileSize, 'content-type' = ContentType, xmlns = ?NS_HTTP_UPLOAD_0}]},
 			escalus:send(Client, xmpp:encode(SlotIq)),
-			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, MucJids, Text}}}}
+			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, MucJids, Text, #tg_id{chat_id = CurChatId, id = Id}}}}}
 	end;
 handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	?dbg("tg msg: ~p", [TgMsg]),
