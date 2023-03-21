@@ -36,6 +36,9 @@ end_per_suite(Config) ->
 	application:start(ebridgebot),
 	escalus:end_per_suite(Config).
 
+init_per_testcase(upload_story, Config) ->
+	meck:new(ebridgebot_tg, [no_link, passthrough]),
+	init_per_testcase(muc_story, Config);
 init_per_testcase(CaseName, Config) ->
 	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
 	Args = [{component, escalus_ct:get_config(ejabberd_service)},
@@ -49,8 +52,8 @@ init_per_testcase(CaseName, Config) ->
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
 	[begin
 		 [Room, ChatId] = [proplists:get_value(K, Opts) || K <- [name, chat_id]],
-%%		 catch mod_muc_admin:destroy_room(Room, MucHost), %% TODO uncomment to destroy room
-%%		 timer:sleep(100),
+		 catch mod_muc_admin:destroy_room(Room, MucHost), %% TODO uncomment to destroy room
+		 timer:sleep(100),
 		 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
 		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
 
@@ -64,6 +67,9 @@ init_per_testcase(CaseName, Config) ->
 	[{component_pid, Pid}, {bot_id, BotId} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
 
+end_per_testcase(upload_story, Config) ->
+	meck:unload(ebridgebot_tg),
+	end_per_testcase(muc_story, Config);
 end_per_testcase(CaseName, Config) ->
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
 	mnesia:delete_table(ebridgebot:bot_table(get_property(bot_id, Config))),
@@ -242,7 +248,7 @@ link_scheduler_story(Config) ->
 upload_story(Config) ->
 	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
 	[MucHost, UploadHost] = [escalus_config:get_ct(K) || K <- [muc_host, upload_host]],
-	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+	MucJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
 	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	escalus:story(Config, [{alice, 1}],
@@ -277,10 +283,25 @@ upload_story(Config) ->
 			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 				httpc:request(get, {binary_to_list(GetURL), []}, [], [{body_format, binary}]),
 			ct:comment("Checking returned body"),
+
+			enter_room(Alice, MucJid, AliceNick),
+			escalus_client:wait_for_stanzas(Alice, 2),
+			meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
+			Pid ! {pe4kin_update, BotName, tg_upload_message(1, ChatId, filename(), Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
+			#message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+			ct:comment("received link message: ~s", [Url]),
+			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
+				httpc:request(get, {binary_to_list(Url), []}, [], [{body_format, binary}]),
+
+			destroy_room(Config),
+			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
+			[#xmpp_link{origin_id = OriginId, mam_id = MamId}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
+			?assert(is_binary(MamId)),
 			ok
 		end).
 
-%% tg API
+%% tg test API
 tg_message(ChatId, MessageId, Username, Text) ->
 	tg_message(<<"message">>, ChatId, MessageId, Username, Text).
 tg_message(Message, ChatId, MessageId, Username, Text) %% emulate Telegram message
@@ -299,6 +320,27 @@ tg_message(Message, ChatId, MessageId, Username, Text) %% emulate Telegram messa
 			<<"username">> => Username},
 		<<"message_id">> => MessageId, <<"text">> => Text},
 		<<"update_id">> => rand:uniform(10000000000)}.
+
+tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption) ->
+	#{<<"message">> =>
+	#{<<"caption">> => Caption,
+		<<"chat">> =>
+		#{<<"all_members_are_administrators">> => true,
+			<<"id">> => ChatId,<<"title">> => <<"RoomTitle">>,
+			<<"type">> => <<"group">>},<<"date">> => erlang:system_time(second),
+		<<"document">> =>
+		#{<<"file_id">> => ebridgebot:gen_uuid(),
+			<<"file_name">> => Filename,
+			<<"file_size">> => FileSize,
+%%			<<"file_unique_id">> => <<"AgADEiwAAguvsUg">>,
+			<<"mime_type">> => <<?CONTENT_TYPE>>},
+		<<"from">> =>
+		#{<<"first_name">> => Username,
+			<<"id">> => rand:uniform(10000000000), <<"is_bot">> => false,
+			<<"language_code">> => <<"en">>,
+			<<"last_name">> => Username,
+			<<"username">> => Username},
+		<<"message_id">> => MessageId}, <<"update_id">> => rand:uniform(10000000000)}.
 
 %% test API
 get_property(PropName, Proplist) ->

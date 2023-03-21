@@ -86,7 +86,7 @@ handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #{
 	?dbg("tg msg: ~p", [TgMsg]),
 	{ok, State};
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	?dbg("tg msg2: ~p", [TgMsg]),
+	?dbg("tg pkt: ~p", [TgMsg]),
 	{ok, State};
 handle_info({pe4kin_send, ChatId, Text}, _Client, #{bot_name := BotName} = State) ->
 	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
