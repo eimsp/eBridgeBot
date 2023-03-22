@@ -52,8 +52,12 @@ init_per_testcase(CaseName, Config) ->
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
 	[begin
 		 [Room, ChatId] = [proplists:get_value(K, Opts) || K <- [name, chat_id]],
-		 catch mod_muc_admin:destroy_room(Room, MucHost), %% TODO uncomment to destroy room
-		 timer:sleep(100),
+		 case application:get_application(ejabberd) of
+			 {ok, _} ->
+				 catch mod_muc_admin:destroy_room(Room, MucHost),
+				 timer:sleep(100);
+			 _ -> ok
+		 end,
 		 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
 		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
 
@@ -69,6 +73,14 @@ init_per_testcase(CaseName, Config) ->
 
 end_per_testcase(upload_story, Config) ->
 	meck:unload(ebridgebot_tg),
+	case application:get_application(ejabberd) of
+		{ok, _} ->
+			Host = hd(ejabberd_option:hosts()),
+			UploadDir = binary_to_list(mod_http_upload_opt:docroot(Host)),
+			Component = get_property(component, Config),
+			file:del_dir_r(filename:join(UploadDir, binary_to_list(str:sha(<<$@, Component/binary>>))));
+		_ -> ok
+	end,
 	end_per_testcase(muc_story, Config);
 end_per_testcase(CaseName, Config) ->
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
@@ -250,9 +262,9 @@ upload_story(Config) ->
 	[MucHost, UploadHost] = [escalus_config:get_ct(K) || K <- [muc_host, upload_host]],
 	MucJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	escalus:story(Config, [{alice, 1}],
-		fun(#client{jid = AliceJid} = Alice) ->
+		fun(#client{jid = _AliceJid} = Alice) ->
 			DiscoInfoIq = #iq{type = get, sub_els = [#disco_info{}], to = UploadJID = jid:decode(UploadHost)},
 			escalus:send(Alice, xmpp:encode(DiscoInfoIq)),
 			#iq{sub_els = [#disco_info{xdata = Xs, features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
