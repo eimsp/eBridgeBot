@@ -82,9 +82,6 @@ handle_info({pe4kin_update, BotName,
 			escalus:send(Client, xmpp:encode(SlotIq)),
 			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, MucJids, Text, #tg_id{chat_id = CurChatId, id = Id}}}}}
 	end;
-handle_info({pe4kin_update, BotName, #{<<"message">> := _} = TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	?dbg("tg msg: ~p", [TgMsg]),
-	{ok, State};
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	?dbg("tg pkt: ~p", [TgMsg]),
 	{ok, State};
@@ -98,29 +95,20 @@ handle_info(Info, _Client, State) ->
 
 send_message(#{bot_name := BotName, chat_id := ChatId}, Text) ->
 	case pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}) of
-		{ok, #{<<"message_id">> := Id}} ->
-			{ok, #tg_id{chat_id = ChatId, id = Id}};
-		Err ->
-			?err("ERROR: send_message: ~p", [Err]),
-			Err
+		{ok, #{<<"message_id">> := Id}} -> {ok, #tg_id{chat_id = ChatId, id = Id}};
+		Err -> ?err("ERROR: send_message: ~p", [Err]), Err
 	end.
 
-edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id}}, Text) ->
+edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId}, Text) ->
 	case pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => Text}) of
-		{ok, _} ->
-			{ok, #tg_id{chat_id = ChatId, id = Id}};
-		Err ->
-			?err("ERROR: : edit_message: ~p", [Err]),
-			Err
+		{ok, _} -> {ok, TgId};
+		Err -> ?err("ERROR: : edit_message: ~p", [Err]), Err
 	end.
 
-delete_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id}}) ->
+delete_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId}) ->
 	case pe4kin:delete_message(BotName, #{chat_id => ChatId, message_id => Id}) of
-		{ok, true} ->
-			{ok, #tg_id{chat_id = ChatId, id = Id}};
-		Err ->
-			?err("ERROR: ~p", [Err]),
-			Err
+		{ok, true} -> {ok, TgId};
+		Err -> ?err("ERROR: ~p", [Err]), Err
 	end.
 
 get_file(#{file_id := FileId, bot_name := BotName, token := Token}) ->
