@@ -57,8 +57,7 @@ handle_info({pe4kin_update, BotName,
 	{ok, State};
 handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
-		#{<<"caption">> := Text,
-		  <<"chat">> :=
+		#{<<"chat">> :=
 				#{<<"id">> := CurChatId,
 			      <<"type">> := Type},
 		  <<"document">> :=
@@ -69,10 +68,11 @@ handle_info({pe4kin_update, BotName,
 		  <<"from">> :=
 				#{<<"language_code">> := _Lang,
 				  <<"username">> := TgUserName},
-		  <<"message_id">> := Id}} = TgMsg}, Client,
+		  <<"message_id">> := Id} = TgBody} = TgMsg}, Client,
 	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State)
 	when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("tg msg upload: ~p", [TgMsg]),
+	Text = case maps:find(<<"caption">>, TgBody) of {ok, V} -> <<V/binary, $\n>>; _ -> <<>> end,
 	case [MucJid || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)] of
 		[] -> {ok, State};
