@@ -94,7 +94,7 @@ handle_info(Info, _Client, State) ->
 	{ok, State}.
 
 send_message(#{bot_name := BotName, chat_id := ChatId, text := Text}) ->
-	format(ChatId, pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text})).
+	format(pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text})).
 
 edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId, text := Text}) ->
 	case pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => Text}) of
@@ -118,18 +118,20 @@ get_file(#{file_id := FileId, bot_name := BotName, token := Token}) ->
 	end.
 
 send_data(#{bot_name := Bot, mime := <<"image/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(ChatId, pe4kin:send_photo(Bot, #{chat_id => ChatId, photo => FileUri, caption => Caption}));
+	format(pe4kin:send_photo(Bot, #{chat_id => ChatId, photo => FileUri, caption => Caption}));
 send_data(#{bot_name := Bot, mime := <<"audio/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(ChatId, pe4kin:send_audio(Bot, #{chat_id => ChatId, audio => FileUri, caption => Caption}));
+	format(pe4kin:send_audio(Bot, #{chat_id => ChatId, audio => FileUri, caption => Caption}));
 send_data(#{bot_name := Bot, mime := <<"video/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(ChatId, pe4kin:send_video(Bot, #{chat_id => ChatId, video => FileUri, caption => Caption}));
+	format(pe4kin:send_video(Bot, #{chat_id => ChatId, video => FileUri, caption => Caption}));
 send_data(#{bot_name := Bot, mime := _, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(ChatId, pe4kin:send_document(Bot, #{chat_id => ChatId, document => FileUri, caption => Caption})).
+	format(pe4kin:send_document(Bot, #{chat_id => ChatId, document => FileUri, caption => Caption})).
 
-format(ChatId, {ok, #{<<"message_id">> := MessageId}}) ->
+format({ok, #{<<"message_id">> := MessageId, <<"chat">> := #{<<"id">> := ChatId}}}) ->
 	{ok, #tg_id{chat_id = ChatId, id = MessageId}};
-format(ChatId, Err) ->
-	?err("ERROR: send_message to chat_id ~p: ~p", [ChatId, Err]), Err.
+format({ok, #{<<"result">> := Result}}) ->
+	format({ok, Result});
+format(Err) ->
+	?err("ERROR: send_message: ~p", [Err]), Err.
 
 link_pred(#{group_id := ChatId}) -> %% filter link predicate
 	fun(#xmpp_link{uid = #tg_id{chat_id = ChatId2}}) when  ChatId == ChatId2 -> true;
