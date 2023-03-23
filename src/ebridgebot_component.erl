@@ -104,7 +104,7 @@ process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
 process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost}, to = #jid{server = ComponentJid},
 	sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} = IQ,
-	Client,
+	_Client,
 	#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
 	when is_map_key(FileId, Upload) ->
 	#{FileId := {ContentType, Nick, RoomJids, Caption, Uid}} = Upload,
@@ -121,8 +121,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 					 escalus_component:send(Pid, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(ComponentJid), to = jid:decode(MucJid),
 						 body = [#text{data = <<Nick/binary, ":\n", Caption/binary, GetURL/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
 					 ebridgebot:write_link(BotId, OriginId, Uid)
-				 end || MucJid <- RoomJids],
-				ok
+				 end || MucJid <- RoomJids]
 			catch
 				E : R ->
 					?err("ERROR:~p: ~p", [E, R])
