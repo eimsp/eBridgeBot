@@ -303,7 +303,8 @@ upload_story(Config) ->
 			#message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 			ct:comment("received link message: ~s", [Url]),
 			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
-				httpc:request(get, {binary_to_list(Url), []}, [], [{body_format, binary}]),
+				wait_for_result(fun() -> httpc:request(get, {binary_to_list(Url), []}, [], [{body_format, binary}]) end,
+					fun({ok, {{"HTTP/1.1", 200, _}, _, _}}) -> true; (_) -> false end),
 
 			destroy_room(Config),
 			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),

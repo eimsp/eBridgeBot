@@ -109,20 +109,24 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 	when is_map_key(FileId, Upload) ->
 	#{FileId := {ContentType, Nick, RoomJids, Caption, Uid}} = Upload,
 	?dbg("slot for upload: ~p", [IQ]),
-	try %% TODO error handling
-		{ok, Data} = Module:get_file(State#{file_id => FileId}),
-		{ok, {{"HTTP/1.1", 201, _}, _, _}} =
-			httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], []),
-		[begin
-			 OriginId = ebridgebot:gen_uuid(),
-			 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(ComponentJid), to = jid:decode(MucJid),
-				 body = [#text{data = <<Nick/binary, ":\n",Caption/binary,"\n", GetURL/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-			 ebridgebot:write_link(BotId, OriginId, Uid)
-		 end || MucJid <- RoomJids]
-	catch
-		E : R ->
-			?err("ERROR:~p: ~p", [E, R])
-	end,
+
+	spawn( %% async get and put data
+		fun() ->
+			try %% TODO error handling
+				{ok, Data} = Module:get_file(State#{file_id => FileId}),
+				{ok, {{"HTTP/1.1", 201, _}, _, _}} =
+					httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], [])
+			catch
+				E : R ->
+					?err("ERROR:~p: ~p", [E, R])
+			end
+		end),
+	[begin %% TODO sent after data transfer
+		 OriginId = ebridgebot:gen_uuid(),
+		 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(ComponentJid), to = jid:decode(MucJid),
+			 body = [#text{data = <<Nick/binary, ":\n", Caption/binary, GetURL/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
+		 ebridgebot:write_link(BotId, OriginId, Uid)
+	 end || MucJid <- RoomJids],
 	{ok, State#{upload => maps:remove(FileId, Upload)}};
 process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{server = ComponentJid} = To} = Pkt,
 	_Client, #{bot_id := BotId, rooms := Rooms, component := ComponentJid} = State) when Type == available; Type == unavailable ->
