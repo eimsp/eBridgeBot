@@ -20,6 +20,7 @@ init(Args) ->
 		[proplists:get_value(K, Args) ||
 			K <- [bot_id, name, component, nick, linked_rooms, module]],
 	UploadHost = proplists:get_value(upload_host, Args, <<"upload.localhost">>),
+	UploadEndpoint = proplists:get_value(upload_endpoint, Args),
 	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
 
 	application:start(mnesia),
@@ -32,7 +33,7 @@ init(Args) ->
 
 	{ok, State} = Module:init(Args),
 	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick,
-		rooms => NewRooms, module => Module, upload_host => UploadHost, upload => #{}}}.
+		rooms => NewRooms, module => Module, upload_host => UploadHost, upload_endpoint => UploadEndpoint, upload => #{}}}.
 
 handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% TimeInterval and LifeSpan in milliseconds
 	?dbg("link_scheduler", []),
@@ -172,7 +173,7 @@ process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{r
 	#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-	Module:edit_message(State#{uid => Uid}, <<Nick/binary, ":\n", Text/binary>>),
+	Module:edit_message(State#{uid => Uid, text => <<Nick/binary, ":\n", Text/binary>>}),
 	ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
 	{ok, State};
 process_stanza(#apply_to{sub_els = [#moderated{sub_els = [#retract{} | _]}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
@@ -202,12 +203,22 @@ process_stanza(_, [#message{} = Pkt, #{} = State | _]) ->
 	?dbg("unexpected msg from xmpp server: ~p", [Pkt]),
 	{ok, State}.
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module} = State | _]) ->
+	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("send to third party client: ~p", [Pkt]),
+	{Fun, TmpState} =
+		case catch binary:match(Text, [UploadEndpoint]) of
+			Found when is_binary(UploadEndpoint), Found /= nomatch ->
+				[MimeType | _] = mimetypes:filename(Text),
+				{send_data, State#{mime => MimeType, file_uri => Text, caption => <<Nick/binary, ":">>}};
+			_ ->
+				{send_message, State#{text => <<Nick/binary, ":\n", Text/binary>>}}
+		end,
+
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-	[case Module:send_message(State#{chat_id => ChatId}, <<Nick/binary, ":\n", Text/binary>>) of
-		 {ok, Uid} -> ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{}));
+	[case Module:Fun(TmpState#{chat_id => ChatId}) of
+		 {ok, Uid} ->
+			 ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{}));
 		 Err -> Err
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};

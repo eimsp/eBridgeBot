@@ -5,7 +5,7 @@
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
--export([init/1, handle_info/3, send_message/2, edit_message/2, delete_message/1, get_file/1, link_pred/1]).
+-export([init/1, handle_info/3, send_message/1, edit_message/1, delete_message/1, send_data/1, get_file/1, link_pred/1]).
 
 -define(CLEARING_INTERVAL, 24). %% in hours
 -define(LIFE_SPAN, 48). %% in hours
@@ -93,13 +93,10 @@ handle_info(Info, _Client, State) ->
 	?dbg("handle component: ~p", [Info]),
 	{ok, State}.
 
-send_message(#{bot_name := BotName, chat_id := ChatId}, Text) ->
-	case pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}) of
-		{ok, #{<<"message_id">> := Id}} -> {ok, #tg_id{chat_id = ChatId, id = Id}};
-		Err -> ?err("ERROR: send_message: ~p", [Err]), Err
-	end.
+send_message(#{bot_name := BotName, chat_id := ChatId, text := Text}) ->
+	format(ChatId, pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text})).
 
-edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId}, Text) ->
+edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId, text := Text}) ->
 	case pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => Text}) of
 		{ok, _} -> {ok, TgId};
 		Err -> ?err("ERROR: : edit_message: ~p", [Err]), Err
@@ -119,6 +116,20 @@ get_file(#{file_id := FileId, bot_name := BotName, token := Token}) ->
 			?err("ERROR: ~p", [Err]),
 			{error, invalid_get_file}
 	end.
+
+send_data(#{bot_name := Bot, mime := <<"image/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
+	format(ChatId, pe4kin:send_photo(Bot, #{chat_id => ChatId, photo => FileUri, caption => Caption}));
+send_data(#{bot_name := Bot, mime := <<"audio/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
+	format(ChatId, pe4kin:send_audio(Bot, #{chat_id => ChatId, audio => FileUri, caption => Caption}));
+send_data(#{bot_name := Bot, mime := <<"video/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
+	format(ChatId, pe4kin:send_video(Bot, #{chat_id => ChatId, video => FileUri, caption => Caption}));
+send_data(#{bot_name := Bot, mime := _, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
+	format(ChatId, pe4kin:send_document(Bot, #{chat_id => ChatId, document => FileUri, caption => Caption})).
+
+format(ChatId, {ok, #{<<"message_id">> := MessageId}}) ->
+	{ok, #tg_id{chat_id = ChatId, id = MessageId}};
+format(ChatId, Err) ->
+	?err("ERROR: send_message to chat_id ~p: ~p", [ChatId, Err]), Err.
 
 link_pred(#{group_id := ChatId}) -> %% filter link predicate
 	fun(#xmpp_link{uid = #tg_id{chat_id = ChatId2}}) when  ChatId == ChatId2 -> true;
