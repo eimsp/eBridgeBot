@@ -33,6 +33,7 @@ init_per_suite(Config) ->
 
 end_per_suite(Config) ->
 	catch escalus:delete_users(Config),
+	catch meck:unload(),
 	application:start(ebridgebot),
 	escalus:end_per_suite(Config).
 
@@ -40,6 +41,8 @@ init_per_testcase(upload_story, Config) ->
 	meck:new(ebridgebot_tg, [no_link, passthrough]),
 	init_per_testcase(muc_story, Config);
 init_per_testcase(CaseName, Config) ->
+	meck:new(ebridgebot_component, [no_link, passthrough]),
+	meck:expect(ebridgebot_component, process_stanza, send_stanza(self())),
 	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
 	Args = [{component, escalus_ct:get_config(ejabberd_service)},
 		{host, escalus_ct:get_config(ejabberd_addr)},
@@ -47,7 +50,8 @@ init_per_testcase(CaseName, Config) ->
 		{password, escalus_ct:get_config(ejabberd_service_password)},
 		{port, escalus_ct:get_config(ejabberd_service_port)},
 		{linked_rooms, []}] ++ BotArgs,
-	{ok, Pid} = ebridgebot_component:start(BotId, Args),
+	{ok, Pid} = wait_for_result(fun() -> ebridgebot_component:start(BotId, Args) end,
+					fun({ok, _}) -> true; (_) -> false end),
 	[_Host, MucHost, Rooms] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
 	[begin
@@ -83,11 +87,13 @@ end_per_testcase(upload_story, Config) ->
 	end,
 	end_per_testcase(muc_story, Config);
 end_per_testcase(CaseName, Config) ->
+	destroy_room(CaseName, Config),
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
 	mnesia:delete_table(ebridgebot:bot_table(get_property(bot_id, Config))),
+	meck:unload(ebridgebot_component),
 	escalus:end_per_testcase(CaseName, Config).
 
-destroy_room(Config) ->
+destroy_room(CaseName, Config) ->
 	[Pid, Component] = [get_property(K, Config) || K <- [component_pid, component]],
 	[Rooms, MucHost] = [escalus_ct:get_config(K) || K <- [ebridgebot_rooms, muc_host]],
 	[begin
@@ -95,7 +101,17 @@ destroy_room(Config) ->
 		 Iq = #iq{type = set,
 			 from = jid:decode(Component), to = jid:make(RoomNode, MucHost),
 			 sub_els = [#muc_owner{destroy = #muc_destroy{}}]},
-		 escalus_component:send(Pid, xmpp:encode(Iq))
+		 escalus_component:send(Pid, xmpp:encode(Iq)),
+		 case CaseName of
+			 subscribe_muc_story -> ok;
+			 _ ->
+				 receive
+					 destroyed -> ct:print("room destroyed")
+				 after 5000 ->
+					 ct:comment("room destroy timeout"),
+					 {error, timeout}
+				 end
+		 end
 	 end || {_, Opts} <- Rooms].
 
 muc_story(Config) ->
@@ -137,15 +153,15 @@ muc_story(Config) ->
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId +1},
 			[#xmpp_link{uid = TgUid2, mam_id = MamId2}] =
-				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
+				wait_for_result(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end,
+					fun([#xmpp_link{mam_id = MamId2}]) when is_binary(MamId2) -> true; (_) -> false end) ,
 			?assert(is_binary(MamId2)),
+
 			%% emulate editing message from Telegram
 			Pid ! {pe4kin_update, BotName, tg_message(<<"edited_message">>, ChatId, MessageId + 1, AliceNick, TgAliceMsg2)},
 			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
-			destroy_room(Config),
-			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			ok
 		end).
 
@@ -187,9 +203,6 @@ subscribe_muc_story(Config) ->
 
 			Pid ! {remove_old_links, erlang:system_time(microsecond)}, %% removes all links
 			[] = wait_for_list(fun() -> mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)) end),
-
-			destroy_room(Config),
-			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			ok
 		end).
 
@@ -233,9 +246,6 @@ moderate_story(Config) ->
 				xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #apply_to{}),
 			[] = wait_for_list(fun() -> ebridgebot:index_read(BotId, MamId2, #xmpp_link.mam_id) end),
 			[_] = ebridgebot:index_read(BotId, MamId, #xmpp_link.mam_id),
-
-			destroy_room(Config),
-			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			ok
 		end).
 
@@ -262,7 +272,7 @@ upload_story(Config) ->
 	[MucHost, UploadHost] = [escalus_config:get_ct(K) || K <- [muc_host, upload_host]],
 	MucJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			DiscoInfoIq = #iq{type = get, sub_els = [#disco_info{}], to = UploadJID = jid:decode(UploadHost)},
@@ -305,9 +315,6 @@ upload_story(Config) ->
 			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 				wait_for_result(fun() -> httpc:request(get, {binary_to_list(Url), []}, [], [{body_format, binary}]) end,
 					fun({ok, {{"HTTP/1.1", 200, _}, _, _}}) -> true; (_) -> false end),
-
-			destroy_room(Config),
-			escalus:assert(is_presence, escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{origin_id = OriginId, mam_id = MamId}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 			?assert(is_binary(MamId)),
@@ -380,3 +387,17 @@ namespaces() ->
 
 filename() ->
 	<<(p1_rand:get_string())/binary, ".png">>.
+
+handle_info(Info, Client, State) ->
+	meck:passthrough([Info, Client, State]).
+
+send_stanza(Pid) ->
+	fun(Stanza, Client, State) ->
+		case xmpp:decode(Stanza) of
+			#presence{type = unavailable, sub_els = [#muc_user{destroy = #muc_destroy{}}]} = Presence ->
+				Res = meck:passthrough([Presence, Client, State]),
+				Pid ! destroyed,
+				Res;
+			_ -> meck:passthrough([Stanza, Client, State])
+		end
+	end.

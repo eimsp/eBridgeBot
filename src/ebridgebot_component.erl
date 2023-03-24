@@ -104,9 +104,9 @@ handle_info(Info, _Client, State) ->
 process_stanza(#xmlel{} = Stanza, Client, State) ->
 	process_stanza(xmpp:decode(Stanza), Client, State);
 process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost}, to = #jid{server = ComponentJid},
-	sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} = IQ,
-	_Client,
-	#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
+					sub_els = [#upload_slot_0{get = GetURL, put = PutURL, xmlns = ?NS_HTTP_UPLOAD_0}]} = IQ,
+		_Client,
+		#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
 	when is_map_key(FileId, Upload) ->
 	#{FileId := {ContentType, Nick, RoomJids, Caption, Uid}} = Upload,
 	?dbg("slot for upload: ~p", [IQ]),
