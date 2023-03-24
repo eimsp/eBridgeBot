@@ -83,7 +83,7 @@ handle_info({pe4kin_update, BotName,
 			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, MucJids, Text, #tg_id{chat_id = CurChatId, id = Id}}}}}
 	end;
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	?dbg("tg pkt: ~p", [TgMsg]),
+	?dbg("pe4kin_update: ~p", [TgMsg]),
 	{ok, State};
 handle_info({pe4kin_send, ChatId, Text}, _Client, #{bot_name := BotName} = State) ->
 	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
@@ -117,14 +117,15 @@ get_file(#{file_id := FileId, bot_name := BotName, token := Token}) ->
 			{error, invalid_get_file}
 	end.
 
-send_data(#{bot_name := Bot, mime := <<"image/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(pe4kin:send_photo(Bot, #{chat_id => ChatId, photo => FileUri, caption => Caption}));
-send_data(#{bot_name := Bot, mime := <<"audio/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(pe4kin:send_audio(Bot, #{chat_id => ChatId, audio => FileUri, caption => Caption}));
-send_data(#{bot_name := Bot, mime := <<"video/", _/binary>>, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(pe4kin:send_video(Bot, #{chat_id => ChatId, video => FileUri, caption => Caption}));
-send_data(#{bot_name := Bot, mime := _, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
-	format(pe4kin:send_document(Bot, #{chat_id => ChatId, document => FileUri, caption => Caption})).
+send_data(#{bot_name := Bot, mime := Mime, chat_id := ChatId, file_uri := FileUri, caption := Caption}) ->
+	{UploadFun, UploadKey} =
+		case Mime of
+			<<"image/", _/binary>> -> {send_photo, photo};
+			<<"audio/", _/binary>> -> {send_audio, audio};
+			<<"video/", _/binary>> -> {send_video, video};
+			_ -> {send_document, document}
+		end,
+	format(pe4kin:UploadFun(Bot, #{chat_id => ChatId, UploadKey => FileUri, caption => Caption})).
 
 format({ok, #{<<"message_id">> := MessageId, <<"chat">> := #{<<"id">> := ChatId}}}) ->
 	{ok, #tg_id{chat_id = ChatId, id = MessageId}};

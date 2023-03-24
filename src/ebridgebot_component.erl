@@ -208,9 +208,8 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 	?dbg("send to third party client: ~p", [Pkt]),
 	{Fun, TmpState} =
 		case catch binary:match(Text, [UploadEndpoint]) of
-			Found when is_binary(UploadEndpoint), Found /= nomatch ->
-				[MimeType | _] = mimetypes:filename(Text),
-				{send_data, State#{mime => MimeType, file_uri => Text, caption => <<Nick/binary, ":">>}};
+			Found when is_binary(UploadEndpoint), Found /= nomatch -> %% TODO if endpoint path has port then tg does not allow upload
+				{send_data, State#{mime => hd(mimetypes:filename(Text)), file_uri => Text, caption => <<Nick/binary, ":">>}};
 			_ ->
 				{send_message, State#{text => <<Nick/binary, ":\n", Text/binary>>}}
 		end,
