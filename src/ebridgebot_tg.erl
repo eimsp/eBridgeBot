@@ -66,6 +66,11 @@ handle_info({pe4kin_update, BotName,
 	TgMsg2 = maps:remove(<<"video">>, TgMsg),
 	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2#{<<"document">> => Video}}}, Client, State);
 handle_info({pe4kin_update, BotName,
+	#{<<"message">> := #{<<"audio">> := Audio} = TgMsg} = TgPkt}, Client, State) ->
+	?dbg("pe4kin_update audio, ~p", [TgPkt]),
+	TgMsg2 = maps:remove(<<"audio">>, TgMsg),
+	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2#{<<"document">> => Audio}}}, Client, State);
+handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
 		#{<<"chat">> :=
 				#{<<"id">> := CurChatId,
