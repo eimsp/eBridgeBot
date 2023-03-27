@@ -30,7 +30,7 @@ handle_info({pe4kin_update, BotName,
 		<<"message_id">> := Id,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
-	?dbg("tg msg groupchat: ~p", [TgMsg]),
+	?dbg("tg msg to groupchat: ~p", [TgMsg]),
 	[begin
 		 OriginId = ebridgebot:gen_uuid(),
 		 escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
@@ -46,7 +46,7 @@ handle_info({pe4kin_update, BotName,
 		<<"message_id">> := Id,
 		<<"text">> := Text}}} = TgMsg, Client,
 	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
-	?dbg("edit tg msg groupchat: ~p", [TgMsg]),
+	?dbg("edit tg msg to groupchat: ~p", [TgMsg]),
 	[case ebridgebot:index_read(BotId, Uid = #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
 		 [#xmpp_link{origin_id = ReplaceId} | _] ->
 			 Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
@@ -105,7 +105,7 @@ edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = T
 delete_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId}) ->
 	case pe4kin:delete_message(BotName, #{chat_id => ChatId, message_id => Id}) of
 		{ok, true} -> {ok, TgId};
-		Err -> ?err("ERROR: ~p", [Err]), Err
+		Err -> ?err("ERROR: delete_message: ~p", [Err]), Err
 	end.
 
 get_file(#{file_id := FileId, bot_name := BotName, token := Token}) ->

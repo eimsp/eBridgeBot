@@ -109,7 +109,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 		#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
 	when is_map_key(FileId, Upload) ->
 	#{FileId := {ContentType, Nick, RoomJids, Caption, Uid}} = Upload,
-	?dbg("slot for upload: ~p", [IQ]),
+	?dbg("upload slot: ~p", [IQ]),
 	Pid = self(),
 	spawn( %% async get and put data
 		fun() ->
