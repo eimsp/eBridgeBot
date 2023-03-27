@@ -56,9 +56,15 @@ handle_info({pe4kin_update, BotName,
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName,
-	#{<<"message">> := #{<<"chat">> := #{<<"photo">> := Photo} = TgChat} = TgMsg}}, Client, State) ->
-	?dbg("pe4kin_update photo, ~p", [TgMsg]),
-	{ok, State};
+	#{<<"message">> := #{<<"photo">> := [Photo | _]} = TgMsg} = TgPkt}, Client, State) ->
+	?dbg("pe4kin_update photo, ~p", [TgPkt]),
+	TgMsg2 = maps:remove(<<"photo">>, TgMsg),
+	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2#{<<"document">> => Photo}}}, Client, State);
+handle_info({pe4kin_update, BotName,
+	#{<<"message">> := #{<<"video">> := Video} = TgMsg} = TgPkt}, Client, State) ->
+	?dbg("pe4kin_update video, ~p", [TgPkt]),
+	TgMsg2 = maps:remove(<<"video">>, TgMsg),
+	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2#{<<"document">> => Video}}}, Client, State);
 handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
 		#{<<"chat">> :=
