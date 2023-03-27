@@ -39,6 +39,7 @@ end_per_suite(Config) ->
 
 init_per_testcase(upload_story, Config) ->
 	meck:new(ebridgebot_tg, [no_link, passthrough]),
+	meck:new(pe4kin, [no_link, passthrough]),
 	init_per_testcase(muc_story, Config);
 init_per_testcase(CaseName, Config) ->
 	meck:new(ebridgebot_component, [no_link, passthrough]),
@@ -77,6 +78,7 @@ init_per_testcase(CaseName, Config) ->
 
 end_per_testcase(upload_story, Config) ->
 	meck:unload(ebridgebot_tg),
+	meck:unload(pe4kin),
 	case application:get_application(ejabberd) of
 		{ok, _} ->
 			Host = hd(ejabberd_option:hosts()),
@@ -309,6 +311,7 @@ upload_story(Config) ->
 			enter_room(Alice, MucJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
 			meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
+			meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => filename(), <<"file_size">> => Size}} end),
 			Pid ! {pe4kin_update, BotName, tg_upload_message(1, ChatId, filename(), Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
 			#message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 			ct:comment("received link message: ~s", [Url]),
