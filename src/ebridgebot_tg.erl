@@ -56,15 +56,16 @@ handle_info({pe4kin_update, BotName,
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName,
+	#{<<"message">> := #{<<"chat">> := #{<<"photo">> := Photo} = TgChat} = TgMsg}}, Client, State) ->
+	?dbg("pe4kin_update photo, ~p", [TgMsg]),
+	{ok, State};
+handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
 		#{<<"chat">> :=
 				#{<<"id">> := CurChatId,
 			      <<"type">> := Type},
 		  <<"document">> :=
-				#{<<"file_id">> := FileId,
-				  <<"file_name">> := FileName,
-				  <<"file_size">> := FileSize,
-				  <<"mime_type">> := ContentType},
+				#{<<"file_id">> := FileId},
 		  <<"from">> :=
 				#{<<"language_code">> := _Lang,
 				  <<"username">> := TgUserName},
@@ -77,10 +78,13 @@ handle_info({pe4kin_update, BotName,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)] of
 		[] -> {ok, State};
 		MucJids ->
+			{ok, #{<<"file_path">> := FilePath, <<"file_size">> := FileSize}} = pe4kin:get_file(BotName, #{file_id => FileId}),
+			[ContentType | _] = mimetypes:filename(FilePath),
+			FileName = filename:basename(FilePath),
 			SlotIq = #iq{id = FileId, type = get, from = jid:decode(Component), to = jid:decode(UploadHost),
 				sub_els = [#upload_request_0{filename = FileName, size = FileSize, 'content-type' = ContentType, xmlns = ?NS_HTTP_UPLOAD_0}]},
 			escalus:send(Client, xmpp:encode(SlotIq)),
-			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, MucJids, Text, #tg_id{chat_id = CurChatId, id = Id}}}}}
+			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, FilePath, MucJids, Text, #tg_id{chat_id = CurChatId, id = Id}}}}}
 	end;
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	?dbg("pe4kin_update: ~p", [TgMsg]),
@@ -108,8 +112,7 @@ delete_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} =
 		Err -> ?err("ERROR: delete_message: ~p", [Err]), Err
 	end.
 
-get_file(#{file_id := FileId, bot_name := BotName, token := Token}) ->
-	{ok, #{<<"file_path">> := FilePath}} = pe4kin:get_file(BotName, #{file_id => FileId}),
+get_file(#{token := Token, file_path := FilePath}) ->
 	case pe4kin_http:get(<<"/file/bot", Token/binary, "/", FilePath/binary>>) of
 		{200, _, Data} -> {ok, Data};
 		{_ErrCode, _, _Reason} = Err ->
