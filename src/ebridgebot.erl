@@ -114,3 +114,7 @@ upd_links(BotId, OriginId, #mam_archived{id = MamId}) ->
 -spec index_read(binary(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
 index_read(BotId, Key, Attr) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Attr)].
+
+to_rooms(CurChatId, Rooms, Fun) ->
+	[Fun(ChatId, MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
+		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
