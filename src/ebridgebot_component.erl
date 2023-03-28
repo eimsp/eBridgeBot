@@ -80,7 +80,7 @@ handle_info({linked_rooms, Type, Action} = Info, Client, #{rooms := Rooms} = Sta
 			{event, subscribe} -> {2, unsubscribed, subscribed};
 			{event, unsubscribe} -> {2, subscribed, unsubscribed}
 		end,
-	NewRooms =
+	LinkedRooms =
 		lists:foldr(
 			fun(#muc_state{muc_jid = MucJid, state = S} = MucState, Acc) when element(I, S) == Prev ->
 				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
@@ -91,7 +91,7 @@ handle_info({linked_rooms, Type, Action} = Info, Client, #{rooms := Rooms} = Sta
 				(MucState, Acc) ->
 					[MucState | Acc]
 			end, [], Rooms),
-	{ok, State#{rooms => NewRooms}};
+	{ok, State#{rooms => LinkedRooms}};
 handle_info({state, Pid}, _Client, State) ->
 	Pid ! {state, State},
 	{ok, State};
