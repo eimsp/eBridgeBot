@@ -56,21 +56,6 @@ handle_info({pe4kin_update, BotName,
 	 end || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms, CurChatId == ChatId andalso (E == in orelse S == subscribed)],
 	{ok, State};
 handle_info({pe4kin_update, BotName,
-	#{<<"message">> := #{<<"photo">> := [Photo | _]} = TgMsg} = TgPkt}, Client, State) ->
-	?dbg("pe4kin_update photo, ~p", [TgPkt]),
-	TgMsg2 = maps:remove(<<"photo">>, TgMsg),
-	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2#{<<"document">> => Photo}}}, Client, State);
-handle_info({pe4kin_update, BotName,
-	#{<<"message">> := #{<<"video">> := Video} = TgMsg} = TgPkt}, Client, State) ->
-	?dbg("pe4kin_update video, ~p", [TgPkt]),
-	TgMsg2 = maps:remove(<<"video">>, TgMsg),
-	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2#{<<"document">> => Video}}}, Client, State);
-handle_info({pe4kin_update, BotName,
-	#{<<"message">> := #{<<"audio">> := Audio} = TgMsg} = TgPkt}, Client, State) ->
-	?dbg("pe4kin_update audio, ~p", [TgPkt]),
-	TgMsg2 = maps:remove(<<"audio">>, TgMsg),
-	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2#{<<"document">> => Audio}}}, Client, State);
-handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
 		#{<<"chat">> :=
 				#{<<"id">> := CurChatId,
@@ -97,6 +82,21 @@ handle_info({pe4kin_update, BotName,
 			escalus:send(Client, xmpp:encode(SlotIq)),
 			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, FilePath, MucJids, Text, #tg_id{chat_id = CurChatId, id = Id}}}}}
 	end;
+handle_info({pe4kin_update, BotName, #{<<"message">> := TgMsg} = TgPkt}, Client, State)
+	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg) ->
+	?dbg("pe4kin_update: photo | video | audio, ~p", [TgPkt]),
+	ReplaceFun =
+		fun ReplaceFun([], Map) -> Map;
+			ReplaceFun([Key | T], Map) ->
+				case maps:take(Key, Map) of
+					{[Doc | _], Map2} -> Map2#{<<"document">> => Doc};
+					{Doc, Map2} -> Map2#{<<"document">> => Doc};
+					_ ->
+						ReplaceFun(T, Map)
+				end
+		end,
+	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>], TgMsg),
+	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2}}, Client, State);
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	?dbg("pe4kin_update: ~p", [TgMsg]),
 	{ok, State};
