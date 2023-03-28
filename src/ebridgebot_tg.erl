@@ -77,7 +77,14 @@ handle_info({pe4kin_update, BotName,
 			SlotIq = #iq{id = FileId, type = get, from = jid:decode(Component), to = jid:decode(UploadHost),
 				sub_els = [#upload_request_0{filename = FileName, size = FileSize, 'content-type' = ContentType, xmlns = ?NS_HTTP_UPLOAD_0}]},
 			escalus:send(Client, xmpp:encode(SlotIq)),
-			{ok, State#{upload => Upload#{FileId => {ContentType, TgUserName, FilePath, MucJids, Text, #tg_id{chat_id = ChatId, id = Id}}}}}
+			{ok, State#{upload => Upload#{FileId =>
+					#upload_info{file_id = FileId,
+						caption = Text,
+						content_type = ContentType,
+						nick = TgUserName,
+						file_path = FilePath,
+						muc_jids = MucJids,
+						uid = #tg_id{chat_id = ChatId, id = Id}}}}}
 	end;
 handle_info({pe4kin_update, BotName, #{<<"message">> := TgMsg} = TgPkt}, Client, State)
 	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg) ->

@@ -16,3 +16,13 @@
 	origin_id = [] :: binary(),
 	mam_id = [] :: binary(),
 	uid = [] :: any()}).
+
+-record(upload_info, {
+	file_id = [] :: binary(),
+	caption = [] :: binary(),
+	nick = [] :: binary(),
+	file_path = [] :: binary(),
+	content_type = [] :: binary(),
+	muc_jids = [] :: binary(),
+	uid = [] :: any()
+}).

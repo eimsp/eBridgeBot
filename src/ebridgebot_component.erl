@@ -108,13 +108,13 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 		_Client,
 		#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
 	when is_map_key(FileId, Upload) ->
-	#{FileId := {ContentType, Nick, FilePath, RoomJids, Caption, Uid}} = Upload,
+	#{FileId := #upload_info{nick = Nick, content_type = ContentType, file_path = FilePath, muc_jids = RoomJids, caption = Caption,uid = Uid}} = Upload,
 	?dbg("upload slot: ~p", [IQ]),
 	Pid = self(),
 	spawn( %% async get and put data
 		fun() ->
 			try %% TODO error handling
-				{ok, Data} = Module:get_file(State#{file_path => FilePath}),
+				{ok, Data} = Module:get_file(State#{file_path => FilePath}), %% TODO set get_file more universal
 				{ok, {{"HTTP/1.1", 201, _}, _, _}} =
 					httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], []),
 				[begin
