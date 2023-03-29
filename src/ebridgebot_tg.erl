@@ -52,6 +52,9 @@ handle_info({telegram_update, BotName, SendType,
 						uid = #tg_id{chat_id = ChatId, id = Id},
 						send_type = SendType}}}}
 	end;
+handle_info({telegram_update, BotName, SendType, #{<<"sticker">> := #{<<"emoji">> := Emoji}} = TgMsg}, Client, State) ->
+	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
+	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> => Emoji}}, Client, State);
 handle_info({telegram_update, BotName, SendType, TgMsg}, Client, State)
 	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg); is_map_key(<<"voice">>, TgMsg) ->
 	?dbg("telegram_update: photo | video | audio | voice, ~p, ~p", [SendType, TgMsg]),
