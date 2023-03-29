@@ -310,7 +310,7 @@ upload_story(Config) ->
 
 			enter_room(Alice, MucJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
-			Extensions = [<<"png">>, <<"mp4">>, <<"mp3">>, <<"txt">>],
+			Extensions = [<<"png">>, <<"mp4">>, <<"mp3">>, <<"oga">>, <<"txt">>],
 			[begin
 				 FileName = filename(Ext),
 				 meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
@@ -356,11 +356,12 @@ tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption) ->
 	UploadData = #{<<"file_id">> => ebridgebot:gen_uuid(), <<"file_size">> => FileSize},
 	{Type, Upload} =
 		case hd(mimetypes:filename(Filename)) of
-		<<"image/", _/binary>> -> {<<"photo">>, lists:duplicate(3, UploadData)};
-		<<"video/", _/binary>> -> {<<"video">>, UploadData};
-		<<"audio/", _/binary>> -> {<<"audio">>, UploadData};
-		_ -> {<<"document">>, UploadData}
-	end,
+			<<"audio/oga">> ->          {<<"voice">>, UploadData};
+			<<"audio/", _/binary>> ->   {<<"audio">>, UploadData};
+			<<"image/", _/binary>> ->   {<<"photo">>, lists:duplicate(3, UploadData)};
+			<<"video/", _/binary>> ->   {<<"video">>, UploadData};
+		_ ->                            {<<"document">>, UploadData}
+		end,
 	#{<<"message">> =>
 		#{<<"caption">> => Caption,
 		  <<"chat">> =>
