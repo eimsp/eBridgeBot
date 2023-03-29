@@ -308,22 +308,28 @@ upload_story(Config) ->
 				httpc:request(get, {binary_to_list(GetURL), []}, [], [{body_format, binary}]),
 			ct:comment("Checking returned body"),
 
-			FileName = filename(<<"png">>),
 			enter_room(Alice, MucJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
-			meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
-			meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
-			Pid ! {pe4kin_update, BotName, tg_upload_message(1, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
-			#message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
-			ct:comment("received link message: ~s", [Url]),
-			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
-				wait_for_result(fun() -> httpc:request(get, {binary_to_list(Url), []}, [], [{body_format, binary}]) end,
-					fun({ok, {{"HTTP/1.1", 200, _}, _, _}}) -> true; (_) -> false end),
-			[#xmpp_link{origin_id = OriginId, mam_id = MamId}] =
-				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
-			#{upload := Upload} = ebridgebot_component:state(Pid),
-			Upload = #{},
-			?assert(is_binary(MamId)),
+			Extensions = [<<"png">>, <<"mp4">>, <<"mp3">>, <<"txt">>],
+			[begin
+				 FileName = filename(Ext),
+				 meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
+				 meck:expect(pe4kin, get_file, fun(_, _) ->
+					 {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
+				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
+				 #message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+				 ct:comment("received link message: ~s", [Url]),
+				 {ok, {{"HTTP/1.1", 200, _}, _, Data}} =
+					 wait_for_result(fun() ->
+						 httpc:request(get, {binary_to_list(Url), []}, [], [{body_format, binary}]) end,
+						 fun({ok, {{"HTTP/1.1", 200, _}, _, _}}) -> true; (_) -> false end),
+				 [#xmpp_link{origin_id = OriginId, mam_id = MamId}] =
+					 wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
+				 #{upload := Upload} = ebridgebot_component:state(Pid),
+				 Upload = #{},
+				 ?assert(is_binary(MamId)),
+				 ct:comment(<<FileName/binary, " is uploaded successfully">>)
+			 end || {Ext, MessageId} <- lists:zip(Extensions, lists:seq(1, length(Extensions)))],
 			ok
 		end).
 
@@ -348,33 +354,30 @@ tg_message(Message, ChatId, MessageId, Username, Text) %% emulate Telegram messa
 		<<"update_id">> => rand:uniform(10000000000)}.
 
 tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption) ->
-	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"document">>).
-tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"image/", _/binary>>) ->
-	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"photo">>);
-tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"video/", _/binary>>) ->
-	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"video">>);
-tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"auidoi/", _/binary>>) ->
-	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"audio">>);
-tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, Type) ->
+	UploadData = #{<<"file_id">> => ebridgebot:gen_uuid(), <<"file_size">> => FileSize},
+	{Type, Upload} =
+		case hd(mimetypes:filename(Filename)) of
+		<<"image/", _/binary>> -> {<<"photo">>, lists:duplicate(3, UploadData)};
+		<<"video/", _/binary>> -> {<<"video">>, UploadData};
+		<<"audio/", _/binary>> -> {<<"audio">>, UploadData};
+		_ -> {<<"document">>, UploadData}
+	end,
 	#{<<"message">> =>
-	#{<<"caption">> => Caption,
-		<<"chat">> =>
-		#{<<"all_members_are_administrators">> => true,
-			<<"id">> => ChatId,<<"title">> => <<"RoomTitle">>,
-			<<"type">> => <<"group">>},<<"date">> => erlang:system_time(second),
-		Type =>
-		#{<<"file_id">> => ebridgebot:gen_uuid(),
-			<<"file_name">> => Filename,
-			<<"file_size">> => FileSize,
-%%			<<"file_unique_id">> => <<"AgADEiwAAguvsUg">>,
-			<<"mime_type">> => <<?CONTENT_TYPE>>},
-		<<"from">> =>
-		#{<<"first_name">> => Username,
-			<<"id">> => rand:uniform(10000000000), <<"is_bot">> => false,
-			<<"language_code">> => <<"en">>,
-			<<"last_name">> => Username,
-			<<"username">> => Username},
-		<<"message_id">> => MessageId}, <<"update_id">> => rand:uniform(10000000000)}.
+		#{<<"caption">> => Caption,
+		  <<"chat">> =>
+			#{<<"all_members_are_administrators">> => true,
+				<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>,
+				<<"type">> => <<"group">>},
+			 <<"date">> => erlang:system_time(second),
+		 Type => Upload,
+		 <<"from">> =>
+			#{<<"first_name">> => Username,
+				<<"id">> => rand:uniform(10000000000), <<"is_bot">> => false,
+				<<"language_code">> => <<"en">>,
+				<<"last_name">> => Username,
+				<<"username">> => Username},
+		<<"message_id">> => MessageId},
+		<<"update_id">> => rand:uniform(10000000000)}.
 
 %% test API
 get_property(PropName, Proplist) ->
