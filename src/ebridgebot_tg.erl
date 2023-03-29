@@ -25,41 +25,6 @@ init(Args) ->
 
 handle_info({pe4kin_update, BotName,
 	#{<<"message">> :=
-		#{<<"chat">>        := #{<<"type">> := Type, <<"id">> := CurChatId},
-		 <<"from">>         := #{<<"username">> := TgUserName},
-		 <<"message_id">>   := Id,
-		 <<"text">>         := Text}}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
-	?dbg("tg msg to groupchat: ~p", [TgMsg]),
-	ebridgebot:to_rooms(CurChatId, Rooms,
-		fun(ChatId, MucJid) ->
-			OriginId = ebridgebot:gen_uuid(),
-			escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(Component), to = jid:decode(MucJid),
-				body = [#text{data = <<TgUserName/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-			ebridgebot:write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
-		end),
-	{ok, State};
-handle_info({pe4kin_update, BotName,
-	#{<<"edited_message">> :=
-		#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
-		 <<"from">> := #{<<"username">> := TgUserName},
-		 <<"message_id">> := Id,
-		 <<"text">> := Text}}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
-	?dbg("edit tg msg to groupchat: ~p", [TgMsg]),
-	ebridgebot:to_rooms(CurChatId, Rooms,
-		fun(ChatId, MucJid) ->
-			case ebridgebot:index_read(BotId, #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
-				[#xmpp_link{origin_id = ReplaceId, uid = Uid} | _] ->
-					Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(Component), jid:decode(MucJid), <<TgUserName/binary, ":\n", Text/binary>>, ReplaceId),
-					escalus:send(Client, xmpp:encode(Pkt)),
-					ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
-				_ -> ok
-			end
-		end),
-	{ok, State};
-handle_info({pe4kin_update, BotName,
-	#{<<"message">> :=
 		#{<<"chat">>        := #{<<"id">> := ChatId, <<"type">> := Type},
 		 <<"document">>     := #{<<"file_id">> := FileId},
 		 <<"from">>         := #{<<"language_code">> := _Lang, <<"username">> := TgUserName},
@@ -72,12 +37,13 @@ handle_info({pe4kin_update, BotName,
 		[] -> {ok, State};
 		MucJids ->
 			{ok, #{<<"file_path">> := FilePath, <<"file_size">> := FileSize}} = pe4kin:get_file(BotName, #{file_id => FileId}),
-			[ContentType | _] = mimetypes:filename(FilePath),
 			FileName = filename:basename(FilePath),
 			SlotIq = #iq{id = FileId, type = get, from = jid:decode(Component), to = jid:decode(UploadHost),
-				sub_els = [#upload_request_0{filename = FileName, size = FileSize, 'content-type' = ContentType, xmlns = ?NS_HTTP_UPLOAD_0}]},
-			escalus:send(Client, xmpp:encode(SlotIq)),
-			{ok, State#{upload => Upload#{FileId =>
+				sub_els = [#upload_request_0{filename = FileName, size = FileSize,
+					'content-type' = ContentType = hd(mimetypes:filename(FilePath)), xmlns = ?NS_HTTP_UPLOAD_0}]},
+			escalus:send(Client, xmpp:encode(SlotIq)), %% send slot iq
+			{ok, State#{upload =>
+				Upload#{FileId =>
 					#upload_info{file_id = FileId,
 						caption = Text,
 						content_type = ContentType,
@@ -101,6 +67,32 @@ handle_info({pe4kin_update, BotName, #{<<"message">> := TgMsg} = TgPkt}, Client,
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>], TgMsg),
 	handle_info({pe4kin_update, BotName, TgPkt#{<<"message">> => TgMsg2}}, Client, State);
+handle_info({pe4kin_update, BotName,
+	#{<<"message">> :=
+	#{<<"chat">>        := #{<<"type">> := Type, <<"id">> := CurChatId},
+		<<"from">>         := #{<<"username">> := TgUserName},
+		<<"message_id">>   := Id,
+		<<"text">>         := Text}}} = TgMsg, Client,
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	?dbg("tg msg to groupchat: ~p", [TgMsg]),
+	ebridgebot:to_rooms(CurChatId, Rooms,
+		fun(ChatId, MucJid) ->
+			ebridgebot:send(Client, BotId, Component, MucJid, #tg_id{chat_id = ChatId, id = Id}, TgUserName, Text)
+		end),
+	{ok, State};
+handle_info({pe4kin_update, BotName,
+	#{<<"edited_message">> :=
+	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
+		<<"from">> := #{<<"username">> := TgUserName},
+		<<"message_id">> := Id,
+		<<"text">> := Text}}} = TgMsg, Client,
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	?dbg("edit tg msg to groupchat: ~p", [TgMsg]),
+	ebridgebot:to_rooms(CurChatId, Rooms,
+		fun(ChatId, MucJid) ->
+			ebridgebot:send_edit(Client, BotId, Component, MucJid, #tg_id{chat_id = ChatId, id = Id}, TgUserName, Text)
+		end),
+	{ok, State};
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	?dbg("pe4kin_update: ~p", [TgMsg]),
 	{ok, State};

@@ -118,3 +118,19 @@ index_read(BotId, Key, Attr) ->
 to_rooms(CurChatId, Rooms, Fun) ->
 	[Fun(ChatId, MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
+
+send_edit(Client, BotId, From, To, Uid, Nick, Text) ->
+	case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
+		[#xmpp_link{origin_id = ReplaceId, uid = Uid} | _] ->
+			Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(From), jid:decode(To),
+				<<Nick/binary, ":\n", Text/binary>>, ReplaceId),
+			escalus:send(Client, xmpp:encode(Pkt)),
+			ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
+		_ -> ok
+	end.
+
+send(Client, BotId, From, To, Uid, Nick, Text) ->
+	OriginId = ebridgebot:gen_uuid(),
+	escalus:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(From), to = jid:decode(To),
+		body = [#text{data = <<Nick/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
+	ebridgebot:write_link(BotId, OriginId, Uid).
