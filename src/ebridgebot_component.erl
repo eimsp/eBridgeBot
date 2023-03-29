@@ -192,7 +192,9 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid} | _] ->
 			 process_stanza(Tag, [{uid, Uid} | S]);
-		 _ -> ok
+		 [] when  is_record(Tag, replace) ->
+			 process_stanza(S); %% new message if the replaced message does not exist
+		 [] -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
 process_stanza(_, [#message{} = Pkt, #{} = State | _]) ->
