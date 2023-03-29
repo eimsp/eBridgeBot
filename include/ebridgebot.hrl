@@ -25,5 +25,5 @@
 	content_type = [] :: binary(),
 	muc_jids = [] :: binary(),
 	uid = [] :: any(),
-	send_fun = send :: send | send_edit
+	send_type = msg :: msg | edit_msg
 }).

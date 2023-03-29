@@ -23,7 +23,7 @@ init(Args) ->
 
 	{ok, #{token => BotToken}}.
 
-handle_info({telegram_update, BotName, SendFun,
+handle_info({telegram_update, BotName, SendType,
 		#{<<"chat">>        := #{<<"id">> := ChatId, <<"type">> := Type},
 		 <<"document">>     := #{<<"file_id">> := FileId},
 		 <<"from">>         := #{<<"username">> := TgUserName},
@@ -50,11 +50,11 @@ handle_info({telegram_update, BotName, SendFun,
 						file_path = FilePath,
 						muc_jids = MucJids,
 						uid = #tg_id{chat_id = ChatId, id = Id},
-						send_fun = SendFun}}}}
+						send_type = SendType}}}}
 	end;
-handle_info({telegram_update, BotName, SendFun, TgMsg}, Client, State)
+handle_info({telegram_update, BotName, SendType, TgMsg}, Client, State)
 	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg); is_map_key(<<"voice">>, TgMsg) ->
-	?dbg("telegram_update: photo | video | audio | voice, ~p, ~p", [SendFun, TgMsg]),
+	?dbg("telegram_update: photo | video | audio | voice, ~p, ~p", [SendType, TgMsg]),
 	ReplaceFun =
 		fun ReplaceFun([], Map) -> Map;
 			ReplaceFun([Key | T], Map) ->
@@ -66,8 +66,8 @@ handle_info({telegram_update, BotName, SendFun, TgMsg}, Client, State)
 				end
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
-	handle_info({telegram_update, BotName, SendFun, TgMsg2}, Client, State);
-handle_info({telegram_update, BotName, SendFun,
+	handle_info({telegram_update, BotName, SendType, TgMsg2}, Client, State);
+handle_info({telegram_update, BotName, SendType,
 	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
 		<<"from">> := #{<<"username">> := TgUserName},
 		<<"message_id">> := Id,
@@ -76,13 +76,13 @@ handle_info({telegram_update, BotName, SendFun,
 	?dbg("telegram_update: msg to groupchat: ~p", [TgMsg]),
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
-			ebridgebot:SendFun(Client, BotId, Component, MucJid, #tg_id{chat_id = ChatId, id = Id}, TgUserName, Text)
+			ebridgebot:send(SendType, Client, BotId, Component, MucJid, #tg_id{chat_id = ChatId, id = Id}, TgUserName, Text)
 		end),
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{<<"message">> := TgMsg}}, Client, State) ->
-	handle_info({telegram_update, BotName, send, TgMsg}, Client, State);
+	handle_info({telegram_update, BotName, msg, TgMsg}, Client, State);
 handle_info({pe4kin_update, BotName, #{<<"edited_message">> := TgMsg}}, Client, State) ->
-	handle_info({telegram_update, BotName, send_edit, TgMsg}, Client, State);
+	handle_info({telegram_update, BotName, edit_msg, TgMsg}, Client, State);
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	?dbg("pe4kin_update: ~p", [TgMsg]),
 	{ok, State};

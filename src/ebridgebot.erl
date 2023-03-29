@@ -119,9 +119,15 @@ to_rooms(CurChatId, Rooms, Fun) ->
 	[Fun(ChatId, MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
 
-send_edit(Pid, BotId, From, To, Uid, Nick, Text) when is_pid(Pid) ->
-	send_edit({escalus_component, Pid}, BotId, From, To, Uid, Nick, Text);
-send_edit({Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
+-spec send(msg | edit_msg, pid() | {escalus | escalus_component, term()}, atom(), binary(), binary(), any(), binary(), binary()) -> ok.
+send(SendType, Pid, BotId, From, To, Uid, Nick, Text) when is_pid(Pid) ->
+	send(SendType, {escalus_component, Pid}, BotId, From, To, Uid, Nick, Text);
+send(msg, {Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
+	OriginId = ebridgebot:gen_uuid(),
+	Module:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(From), to = jid:decode(To),
+		body = [#text{data = <<Nick/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
+	ebridgebot:write_link(BotId, OriginId, Uid);
+send(edit_msg, {Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
 	case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
 		[#xmpp_link{origin_id = ReplaceId, uid = Uid} | _] ->
 			Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(From), jid:decode(To),
@@ -130,15 +136,5 @@ send_edit({Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == esc
 			ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
 		_ -> ok
 	end;
-send_edit(Client, BotId, From, To, Uid, Nick, Text) ->
-	send_edit({escalus, Client}, BotId, From, To, Uid, Nick, Text).
-
-send(Pid, BotId, From, To, Uid, Nick, Text) when is_pid(Pid) ->
-	send({escalus_component, Pid}, BotId, From, To, Uid, Nick, Text);
-send({Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
-	OriginId = ebridgebot:gen_uuid(),
-	Module:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(From), to = jid:decode(To),
-		body = [#text{data = <<Nick/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-	ebridgebot:write_link(BotId, OriginId, Uid);
-send(Client, BotId, From, To, Uid, Nick, Text) ->
-	send({escalus, Client}, BotId, From, To, Uid, Nick, Text).
+send(SendType, Client, BotId, From, To, Uid, Nick, Text) when SendType == msg; SendType == edit_msg ->
+	send(SendType, {escalus, Client}, BotId, From, To, Uid, Nick, Text).

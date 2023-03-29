@@ -109,7 +109,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 		#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
 	when is_map_key(FileId, Upload) ->
 	#{FileId := #upload_info{nick = Nick, content_type = ContentType, file_path = FilePath,
-		muc_jids = RoomJids, caption = Caption, uid = Uid, send_fun = SendFun}} = Upload,
+		muc_jids = RoomJids, caption = Caption, uid = Uid, send_type = SendType}} = Upload,
 	?dbg("upload slot: ~p", [IQ]),
 	Pid = self(),
 	spawn( %% async get and put data
@@ -118,7 +118,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 				{ok, Data} = Module:get_file(State#{file_path => FilePath}), %% TODO set get_file more universal
 				{ok, {{"HTTP/1.1", 201, _}, _, _}} =
 					httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], []),
-				[ebridgebot:SendFun(Pid, BotId, ComponentJid, MucJid, Uid, Nick, <<Caption/binary, GetURL/binary>>) || MucJid <- RoomJids]
+				[ebridgebot:send(SendType, Pid, BotId, ComponentJid, MucJid, Uid, Nick, <<Caption/binary, GetURL/binary>>) || MucJid <- RoomJids]
 			catch
 				E : R ->
 					?err("ERROR:~p: ~p", [E, R])
