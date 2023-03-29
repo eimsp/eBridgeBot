@@ -24,5 +24,6 @@
 	file_path = [] :: binary(),
 	content_type = [] :: binary(),
 	muc_jids = [] :: binary(),
-	uid = [] :: any()
+	uid = [] :: any(),
+	send_fun = send :: send | send_edit
 }).
