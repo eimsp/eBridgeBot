@@ -81,7 +81,7 @@ handle_info({linked_rooms, Type, Action} = Info, Client, #{rooms := Rooms} = Sta
 			{event, unsubscribe} -> {2, subscribed, unsubscribed}
 		end,
 	LinkedRooms =
-		lists:foldr(
+		lists:foldr( %% sync states of rooms
 			fun(#muc_state{muc_jid = MucJid, state = S} = MucState, Acc) when element(I, S) == Prev ->
 				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
 					#muc_state{} -> ok;
