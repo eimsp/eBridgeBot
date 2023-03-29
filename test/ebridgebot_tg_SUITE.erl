@@ -308,11 +308,12 @@ upload_story(Config) ->
 				httpc:request(get, {binary_to_list(GetURL), []}, [], [{body_format, binary}]),
 			ct:comment("Checking returned body"),
 
+			FileName = filename(<<"png">>),
 			enter_room(Alice, MucJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
 			meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
-			meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => filename(), <<"file_size">> => Size}} end),
-			Pid ! {pe4kin_update, BotName, tg_upload_message(1, ChatId, filename(), Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
+			meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
+			Pid ! {pe4kin_update, BotName, tg_upload_message(1, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
 			#message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 			ct:comment("received link message: ~s", [Url]),
 			{ok, {{"HTTP/1.1", 200, _}, _, Data}} =
@@ -320,6 +321,8 @@ upload_story(Config) ->
 					fun({ok, {{"HTTP/1.1", 200, _}, _, _}}) -> true; (_) -> false end),
 			[#xmpp_link{origin_id = OriginId, mam_id = MamId}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
+			#{upload := Upload} = ebridgebot_component:state(Pid),
+			Upload = #{},
 			?assert(is_binary(MamId)),
 			ok
 		end).
@@ -345,13 +348,21 @@ tg_message(Message, ChatId, MessageId, Username, Text) %% emulate Telegram messa
 		<<"update_id">> => rand:uniform(10000000000)}.
 
 tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption) ->
+	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"document">>).
+tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"image/", _/binary>>) ->
+	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"photo">>);
+tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"video/", _/binary>>) ->
+	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"video">>);
+tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"auidoi/", _/binary>>) ->
+	tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, <<"audio">>);
+tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption, Type) ->
 	#{<<"message">> =>
 	#{<<"caption">> => Caption,
 		<<"chat">> =>
 		#{<<"all_members_are_administrators">> => true,
 			<<"id">> => ChatId,<<"title">> => <<"RoomTitle">>,
 			<<"type">> => <<"group">>},<<"date">> => erlang:system_time(second),
-		<<"document">> =>
+		Type =>
 		#{<<"file_id">> => ebridgebot:gen_uuid(),
 			<<"file_name">> => Filename,
 			<<"file_size">> => FileSize,
@@ -389,7 +400,10 @@ namespaces() ->
 	[?NS_HTTP_UPLOAD_0, ?NS_HTTP_UPLOAD, ?NS_HTTP_UPLOAD_OLD].
 
 filename() ->
-	<<(p1_rand:get_string())/binary, ".png">>.
+	filename(<<"png">>).
+
+filename(Ext) ->
+	<<(p1_rand:get_string())/binary, $., Ext/binary>>.
 
 handle_info(Info, Client, State) ->
 	meck:passthrough([Info, Client, State]).
