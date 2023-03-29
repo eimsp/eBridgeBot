@@ -7,10 +7,11 @@
    [kernel,
     stdlib,
     xmpp,
-    pe4kin
+    pe4kin,
+    mimetypes
    ]},
   {env, []},
-    {modules, []},
+  {modules, []},
 
   {licenses, ["Apache 2.0"]},
   {links, []}
