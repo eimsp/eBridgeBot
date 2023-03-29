@@ -21,7 +21,7 @@ init(Args) ->
 			K <- [bot_id, name, component, nick, linked_rooms, module]],
 	UploadHost = proplists:get_value(upload_host, Args, <<"upload.localhost">>),
 	UploadEndpoint = proplists:get_value(upload_endpoint, Args),
-	NewRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
+	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
 
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
@@ -33,9 +33,9 @@ init(Args) ->
 
 	{ok, State} = Module:init(Args),
 	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick,
-		rooms => NewRooms, module => Module, upload_host => UploadHost, upload_endpoint => UploadEndpoint, upload => #{}}}.
+		rooms => LinkedRooms, module => Module, upload_host => UploadHost, upload_endpoint => UploadEndpoint, upload => #{}}}.
 
-handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% TimeInterval and LifeSpan in milliseconds
+handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% ClearInterval and LifeSpan in milliseconds
 	?dbg("link_scheduler", []),
 	catch erlang:cancel_timer(maps:get(link_scheduler_ref, State)),
 	handle_info({remove_old_links, erlang:system_time(microsecond) - LifeSpan * 1000}, _Client, State),
@@ -48,7 +48,7 @@ handle_info(stop_link_scheduler, _Client, #{link_scheduler_ref := TRef} = State)
 handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
 	?dbg("remove_old_links", []),
 	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
-	[mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)],
+	spawn(fun() -> [mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)] end),
 	{ok, State};
 
 handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->

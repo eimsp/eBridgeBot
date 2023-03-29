@@ -11,6 +11,7 @@
 -define(LIFE_SPAN, 48). %% in hours
 
 init(Args) ->
+	?dbg("init pe4kin with args: ~p", [Args]),
 	application:ensure_all_started(pe4kin),
 	[BotName, BotToken] = [proplists:get_value(K, Args) || K <- [name, token]],
 	pe4kin:launch_bot(BotName, BotToken, #{receiver => true}),
