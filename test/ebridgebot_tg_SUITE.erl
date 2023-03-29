@@ -77,8 +77,8 @@ init_per_testcase(CaseName, Config) ->
 
 
 end_per_testcase(upload_story, Config) ->
-	meck:unload(ebridgebot_tg),
-	meck:unload(pe4kin),
+	catch meck:unload(ebridgebot_tg),
+	catch meck:unload(pe4kin),
 	case application:get_application(ejabberd) of
 		{ok, _} ->
 			Host = hd(ejabberd_option:hosts()),
@@ -89,10 +89,10 @@ end_per_testcase(upload_story, Config) ->
 	end,
 	end_per_testcase(muc_story, Config);
 end_per_testcase(CaseName, Config) ->
-	destroy_room(CaseName, Config),
+	catch destroy_room(CaseName, Config),
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
 	mnesia:delete_table(ebridgebot:bot_table(get_property(bot_id, Config))),
-	meck:unload(ebridgebot_component),
+	catch meck:unload(ebridgebot_component),
 	escalus:end_per_testcase(CaseName, Config).
 
 destroy_room(CaseName, Config) ->
@@ -314,8 +314,7 @@ upload_story(Config) ->
 			[begin
 				 FileName = filename(Ext),
 				 meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
-				 meck:expect(pe4kin, get_file, fun(_, _) ->
-					 {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
+				 meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
 				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
 				 #message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 				 ct:comment("received link message: ~s", [Url]),
