@@ -183,9 +183,9 @@ process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = g
 	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- ebridgebot:index_read(BotId, Uid, #xmpp_link.uid)],
 	{ok, State};
 process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | _] = Args)
-	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edit message from xmpp groupchat
-	MucFrom = jid:encode(jid:remove_resource(From)),
+	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edited or moderated message from xmpp groupchat
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
+	MucFrom = jid:encode(jid:remove_resource(From)),
 	Id = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
 	Attr = case Tag of #apply_to{sub_els = [#moderated{}]} -> #xmpp_link.mam_id; _ -> #xmpp_link.origin_id end,
 	Links = ebridgebot:index_read(BotId, Id, Attr),
@@ -193,7 +193,7 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 		 [#xmpp_link{uid = Uid} | _] ->
 			 process_stanza(Tag, [{uid, Uid} | Args]);
 		 [] when is_record(Tag, replace) ->
-			 process_stanza(xmpp:get_subtag(Pkt, #origin_id{}), Args); %% new message if the replaced message does not exist
+			 process_stanza(xmpp:get_subtag(Pkt, #origin_id{}), Args); %% send new message if the replaced message does not exist
 		 [] -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
