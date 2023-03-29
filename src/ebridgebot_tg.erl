@@ -56,14 +56,22 @@ handle_info({telegram_update, BotName, SendType,
 	#{<<"reply_to_message">> :=
 		#{<<"from">> :=
 			#{<<"username">> := QuotedUser},
-			<<"message_id">> := _,
-			<<"text">> := QuotedText},
+			  <<"text">> := QuotedText},
 	 <<"text">> := Text} = TgMsg}, Client, State) ->
+	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"reply_to_message">>, TgMsg),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	Text3 = <<$>, QuotedUser/binary, "\n>", Text2/binary, $\n, Text/binary>>,
 	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> := Text3}}, Client, State);
+handle_info({telegram_update, BotName, SendType,
+	#{<<"forward_from">> := #{<<"username">> := QuotedUser},
+	 <<"text">> := Text} = TgMsg}, Client, State) ->
+	?dbg("telegram_update: forward_from: ~p", [TgMsg]),
+	TgMsg2 = maps:remove(<<"forward_from">>, TgMsg),
+	Text2 = <<$>, QuotedUser/binary, ":\n", Text/binary>>,
+	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> := Text2}}, Client, State);
 handle_info({telegram_update, BotName, SendType, #{<<"sticker">> := #{<<"emoji">> := Emoji}} = TgMsg}, Client, State) ->
+	?dbg("telegram_update: sticker: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
 	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> => Emoji}}, Client, State);
 handle_info({telegram_update, BotName, SendType, TgMsg}, Client, State)
