@@ -155,7 +155,7 @@ process_stanza(Stanza, _Client, State) ->
 process_stanza(#ps_event{items = #ps_items{node = ?NS_MUCSUB_NODES_MESSAGES, items = [#ps_item{sub_els = [#xmlel{name = <<"message">>} = Pkt]}]}},
 	[#message{type = normal, from = #jid{resource = <<>>}, to = #jid{resource = <<>>}}, #{} = State, Client]) -> %% event message if subscribed
 	?dbg("handle event sub message: ~p", [Pkt]),
-	process_stanza(Pkt,  Client, State);
+	process_stanza(Pkt, Client, State);
 process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #{} = State | _]) ->
 	?dbg("handle event message: ~p", [Event]),
 	%% TODO not implemented

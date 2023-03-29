@@ -28,6 +28,7 @@ run_test(Suite, Testcases) when is_atom(Suite) ->
 					{config, filename:join(TestPath, "test/test.config")}])
 	end.
 
+-spec tag_decorator(list(xmpp_element()), list(xmpp_element() | list(any())), atom(), atom()) -> function().
 tag_decorator([], Data, Mod, Fun) ->
 	fun() -> Mod:Fun(Data) end;
 tag_decorator([El | TEls], [Pkt | _] = Data, Mod, Fun) ->
@@ -36,8 +37,11 @@ tag_decorator([El | TEls], [Pkt | _] = Data, Mod, Fun) ->
 		Tag -> fun() -> Mod:Fun(Tag, Data) end
 	end.
 
+-spec wait_for_result(function(), function() | term()) -> any().
 wait_for_result(Fun, WaitedResult) ->
 	wait_for_result(Fun, WaitedResult, 20, 100).
+
+-spec wait_for_result(function(), function() | term(), integer(), integer()) -> any().
 wait_for_result(Fun, _WaitedResultFun, 0, _) ->
 	{error, wait_timout, Fun()};
 wait_for_result(Fun, WaitedResultFun, Counter, Interval) when is_function(WaitedResultFun) ->
@@ -56,10 +60,15 @@ wait_for_result(Fun, WaitedResult, Counter, Interval) ->
 			wait_for_result(Fun, WaitedResult, Counter-1, Interval)
 	end.
 
+-spec wait_for_list(function()) -> any().
 wait_for_list(Fun) ->
 	wait_for_list(Fun, 0).
+
+-spec wait_for_list(function(), integer()) -> any().
 wait_for_list(Fun, Length) ->
 	wait_for_list(Fun, Length, 20, 100).
+
+-spec wait_for_list(function(), integer(), integer(), neg_integer()) -> any().
 wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integer(Interval), is_integer(Length)->
 	PredFun =
 		fun(Arg) when is_list(Arg), length(Arg) == Length -> true;
@@ -68,6 +77,8 @@ wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integ
 	wait_for_result(Fun, PredFun, Counter, Interval).
 
 %% component help API
+
+-spec bot_table(atom()) -> atom().
 bot_table(BotId) -> %% generate table name for bot
 	list_to_atom(atom_to_list(BotId)++"_link").
 
@@ -115,6 +126,7 @@ upd_links(BotId, OriginId, #mam_archived{id = MamId}) ->
 index_read(BotId, Key, Attr) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Attr)].
 
+-spec to_rooms(integer() | binary(), list(#muc_state{}), function()) -> list(any()).
 to_rooms(CurChatId, Rooms, Fun) ->
 	[Fun(ChatId, MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
