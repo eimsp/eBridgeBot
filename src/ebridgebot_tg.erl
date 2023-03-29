@@ -52,6 +52,17 @@ handle_info({telegram_update, BotName, SendType,
 						uid = #tg_id{chat_id = ChatId, id = Id},
 						send_type = SendType}}}}
 	end;
+handle_info({telegram_update, BotName, SendType,
+	#{<<"reply_to_message">> :=
+		#{<<"from">> :=
+			#{<<"username">> := QuotedUser},
+			<<"message_id">> := _,
+			<<"text">> := QuotedText},
+	 <<"text">> := Text} = TgMsg}, Client, State) ->
+	TgMsg2 = maps:remove(<<"reply_to_message">>, TgMsg),
+	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
+	Text3 = <<$>, QuotedUser/binary, "\n>", Text2/binary, $\n, Text/binary>>,
+	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> := Text3}}, Client, State);
 handle_info({telegram_update, BotName, SendType, #{<<"sticker">> := #{<<"emoji">> := Emoji}} = TgMsg}, Client, State) ->
 	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
 	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> => Emoji}}, Client, State);
