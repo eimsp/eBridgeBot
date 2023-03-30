@@ -28,15 +28,6 @@ run_test(Suite, Testcases) when is_atom(Suite) ->
 					{config, filename:join(TestPath, "test/test.config")}])
 	end.
 
--spec tag_decorator(list(xmpp_element()), list(xmpp_element() | list(any())), atom(), atom()) -> function().
-tag_decorator([], Data, Mod, Fun) ->
-	fun() -> Mod:Fun(Data) end;
-tag_decorator([El | TEls], [Pkt | _] = Data, Mod, Fun) ->
-	case xmpp:get_subtag(Pkt, El) of
-		false -> tag_decorator(TEls, Data, Mod, Fun);
-		Tag -> fun() -> Mod:Fun(Tag, Data) end
-	end.
-
 -spec wait_for_result(function(), function() | term()) -> any().
 wait_for_result(Fun, WaitedResult) ->
 	wait_for_result(Fun, WaitedResult, 20, 100).
@@ -77,6 +68,15 @@ wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integ
 	wait_for_result(Fun, PredFun, Counter, Interval).
 
 %% component help API
+
+-spec tag_decorator(list(xmpp_element()), list(xmpp_element() | list(any())), atom(), atom()) -> function().
+tag_decorator([], Data, Mod, Fun) ->
+	fun() -> Mod:Fun(Data) end;
+tag_decorator([El | TEls], [Pkt | _] = Data, Mod, Fun) ->
+	case xmpp:get_subtag(Pkt, El) of
+		false -> tag_decorator(TEls, Data, Mod, Fun);
+		Tag -> fun() -> Mod:Fun(Tag, Data) end
+	end.
 
 -spec bot_table(atom()) -> atom().
 bot_table(BotId) -> %% generate table name for bot

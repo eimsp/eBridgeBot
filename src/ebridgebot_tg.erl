@@ -75,6 +75,10 @@ handle_info({telegram_update, BotName, SendType, #{<<"sticker">> := #{<<"emoji">
 	?dbg("telegram_update: sticker: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
 	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> => Emoji}}, Client, State);
+handle_info({telegram_update, BotName, SendType, #{<<"sticker">> := Sticker} = TgMsg}, Client, State) -> %% if sticker is not linked with emoji
+	?dbg("telegram_update: sticker without emoji: ~p", [TgMsg]),
+	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
+	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"document">> => Sticker}}, Client, State);
 handle_info({telegram_update, BotName, SendType, TgMsg}, Client, State)
 	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg); is_map_key(<<"voice">>, TgMsg) ->
 	?dbg("telegram_update: photo | video | audio | voice, ~p, ~p", [SendType, TgMsg]),
