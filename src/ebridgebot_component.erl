@@ -197,9 +197,10 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 		 [] -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
-process_stanza(_, [#message{} = Pkt, #{} = State | _]) ->
-	?dbg("unexpected msg from xmpp server: ~p", [Pkt]),
-	{ok, State}.
+process_stanza(_, [#message{} = Pkt | _] = StateList) ->
+	?dbg("msg without origin id: ~p", [Pkt]),
+	process_stanza(StateList).
+
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
 	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
@@ -212,10 +213,9 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 				{send_message, State#{text => <<Nick/binary, ":\n", Text/binary>>}}
 		end,
 
-	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
 	[case Module:Fun(TmpState#{chat_id => ChatId}) of
 		 {ok, Uid} ->
-			 ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{}));
+			 ebridgebot:write_link(BotId, xmpp:get_subtag(Pkt, #origin_id{}), Uid, xmpp:get_subtag(Pkt, #mam_archived{}));
 		 Err -> Err
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};

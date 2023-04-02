@@ -106,11 +106,15 @@ edit_msg(From, To, Text, ReplaceId) ->
 write_link(BotId, OriginId, Uid) ->
 	write_link(BotId, OriginId, Uid, []).
 
--spec write_link(atom(), binary(), any(), #mam_archived{} | binary() | false | []) -> ok.
+-spec write_link(atom(), binary() | #origin_id{} | false | [], any(), #mam_archived{} | binary() | false | []) -> ok.
+write_link(BotId, #origin_id{id = OriginId}, Uid, MamId) ->
+	write_link(BotId, OriginId, Uid, MamId);
 write_link(BotId, OriginId, Uid, #mam_archived{id = MamId}) ->
 	write_link(BotId, OriginId, Uid, MamId);
 write_link(BotId, OriginId, Uid, false) ->
-	write_link(BotId, OriginId, Uid);
+	write_link(BotId, OriginId, Uid, []);
+write_link(BotId, false, Uid, MamId) ->
+	write_link(BotId, [], Uid, MamId);
 write_link(BotId, OriginId, Uid, MamId) ->
 	mnesia:dirty_write(setelement(1, #xmpp_link{origin_id = OriginId, mam_id = MamId, uid = Uid}, ebridgebot:bot_table(BotId))).
 
