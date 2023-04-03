@@ -16,9 +16,9 @@ start_link(Args) ->
 	escalus_component:start_link(?MODULE, Args, Args).
 
 init(Args) ->
-	[BotId, BotName, Component, Nick, Rooms, Module] =
+	[BotId, Component, Nick, Rooms, Module] =
 		[proplists:get_value(K, Args) ||
-			K <- [bot_id, name, component, nick, linked_rooms, module]],
+			K <- [bot_id, component, nick, linked_rooms, module]],
 	UploadHost = proplists:get_value(upload_host, Args, <<"upload.localhost">>),
 	UploadEndpoint = proplists:get_value(upload_endpoint, Args),
 	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
@@ -32,7 +32,7 @@ init(Args) ->
 	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
 
 	{ok, State} = Module:init(Args),
-	{ok, State#{bot_id => BotId, bot_name => BotName, component => Component, nick => Nick,
+	{ok, State#{bot_id => BotId, component => Component, nick => Nick,
 		rooms => LinkedRooms, module => Module, upload_host => UploadHost, upload_endpoint => UploadEndpoint, upload => #{}}}.
 
 handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% ClearInterval and LifeSpan in milliseconds

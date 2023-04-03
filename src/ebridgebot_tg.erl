@@ -22,7 +22,7 @@ init(Args) ->
 	LifeSpan = proplists:get_value(life_span, Args, ?LIFE_SPAN),
 	self() ! {link_scheduler, ClearingInterval * 60 * 60 * 1000, LifeSpan * 60 * 60 * 1000}, %% start scheduler
 
-	{ok, #{token => BotToken}}.
+	{ok, #{bot_name => BotName, token => BotToken}}.
 
 handle_info({telegram_update, BotName, SendType,
 		#{<<"chat">>        := #{<<"id">> := ChatId, <<"type">> := Type},
@@ -65,8 +65,7 @@ handle_info({telegram_update, BotName, SendType,
 	Text3 = <<$>, QuotedUser/binary, "\n>", Text2/binary, $\n, Text/binary>>,
 	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> := Text3}}, Client, State);
 handle_info({telegram_update, BotName, SendType,
-	#{<<"forward_from">> := #{<<"username">> := QuotedUser},
-	 <<"text">> := Text} = TgMsg}, Client, State) ->
+		#{<<"forward_from">> := #{<<"username">> := QuotedUser}, <<"text">> := Text} = TgMsg}, Client, State) ->
 	?dbg("telegram_update: forward_from: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"forward_from">>, TgMsg),
 	Text2 = <<$>, QuotedUser/binary, ":\n", Text/binary>>,
