@@ -43,7 +43,7 @@ init_per_testcase(upload_story, Config) ->
 	init_per_testcase(muc_story, Config);
 init_per_testcase(CaseName, Config) ->
 	meck:new(ebridgebot_component, [no_link, passthrough]),
-	meck:expect(ebridgebot_component, process_stanza, send_stanza(self())),
+	meck:expect(ebridgebot_component, process_stanza, send_stanza_fun(self())),
 	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
 	Args = [{component, escalus_ct:get_config(ejabberd_service)},
 		{host, escalus_ct:get_config(ejabberd_addr)},
@@ -213,17 +213,20 @@ moderate_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = AliceJid} = Alice) ->
 			DiscoInfoIq = #xmlel{attrs = Attrs} =
 				escalus_stanza:iq_get(?NS_DISCO_INFO, []),
-			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}), %% TODO set Alice as moderator
+			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}),
 			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 			true = lists:member(?NS_MSG_MODERATE, Features),
 
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
+			ModeratorIq = #iq{type = set, from = jid:decode(Component), to = jid:decode(RoomJid),
+								sub_els = [#muc_admin{items = [#muc_item{affiliation = admin, jid = jid:decode(AliceJid)}]}]},
+			escalus_component:send(Pid, xmpp:encode(ModeratorIq)), %% set Alice as admin
 
 			AliceMsg = <<"Hi, bot!">>, ComponentMsg = <<"Hi, Alice!">>,
 			AlicePkt = xmpp:set_subtag(xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
@@ -411,7 +414,7 @@ filename(Ext) ->
 handle_info(Info, Client, State) ->
 	meck:passthrough([Info, Client, State]).
 
-send_stanza(Pid) ->
+send_stanza_fun(Pid) ->
 	fun(Stanza, Client, State) ->
 		case xmpp:decode(Stanza) of
 			#presence{type = unavailable, sub_els = [#muc_user{destroy = #muc_destroy{}}]} = Presence ->
