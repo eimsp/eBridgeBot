@@ -20,10 +20,17 @@ init(Args) ->
 
 	ClearingInterval = proplists:get_value(clearing_interval, Args, ?CLEARING_INTERVAL),
 	LifeSpan = proplists:get_value(life_span, Args, ?LIFE_SPAN),
+	IgnoreCommands = proplists:get_value(ignore_commands, Args, true),
 	self() ! {link_scheduler, ClearingInterval * 60 * 60 * 1000, LifeSpan * 60 * 60 * 1000}, %% start scheduler
 
-	{ok, #{bot_name => BotName, token => BotToken}}.
+	{ok, #{bot_name => BotName, token => BotToken, ignore_commands => IgnoreCommands}}.
 
+handle_info({telegram_update, BotName, _SendType,
+		#{<<"chat">>        := #{<<"type">> := Type},
+		  <<"entities">>    := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
+	#{bot_name := BotName, ignore_commands := true} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	?dbg("ignore commands from tg: ~p", [TgMsg]),
+	{ok, State};
 handle_info({telegram_update, BotName, SendType,
 		#{<<"chat">>        := #{<<"id">> := ChatId, <<"type">> := Type},
 		 <<"document">>     := #{<<"file_id">> := FileId},
