@@ -22,6 +22,7 @@ init(Args) ->
 	UploadHost = proplists:get_value(upload_host, Args, <<"upload.localhost">>),
 	UploadEndpoint = proplists:get_value(upload_endpoint, Args),
 	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
+	Format = proplists:get_value(format, Args, #{}),
 
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
@@ -33,7 +34,7 @@ init(Args) ->
 
 	{ok, State} = Module:init(Args),
 	{ok, State#{bot_id => BotId, component => Component, nick => Nick,
-		rooms => LinkedRooms, module => Module, upload_host => UploadHost, upload_endpoint => UploadEndpoint, upload => #{}}}.
+		rooms => LinkedRooms, module => Module, upload_host => UploadHost, upload_endpoint => UploadEndpoint, upload => #{}, format => Format}}.
 
 handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% ClearInterval and LifeSpan in milliseconds
 	?dbg("link_scheduler", []),
@@ -169,7 +170,7 @@ process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{r
 	#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
 	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-	Module:edit_message(State#{uid => Uid, text => <<Nick/binary, ":\n", Text/binary>>}),
+	Module:edit_message(State#{uid => Uid, text => Text, usernick => Nick}),
 	ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
 	{ok, State};
 process_stanza(#apply_to{sub_els = [#moderated{sub_els = [#retract{} | _]}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
@@ -210,7 +211,7 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 			Found when is_binary(UploadEndpoint), Found /= nomatch -> %% TODO if endpoint path has port then tg does not allow upload
 				{send_data, State#{mime => hd(mimetypes:filename(Text)), file_uri => Text, caption => <<Nick/binary, ":">>}};
 			_ ->
-				{send_message, State#{text => <<Nick/binary, ":\n", Text/binary>>}}
+				{send_message, State#{text => Text, usernick => Nick}}
 		end,
 
 	[case Module:Fun(TmpState#{chat_id => ChatId}) of

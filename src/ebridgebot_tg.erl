@@ -127,13 +127,24 @@ handle_info(Info, _Client, State) ->
 	?dbg("handle component: ~p", [Info]),
 	{ok, State}.
 
+-spec send_message(map()) -> {ok, #tg_id{}} | {error, atom(), term()}.
+send_message(#{bot_name := BotName, chat_id := ChatId, text := Text, usernick := Nick, format := #{usernick := Type}}) ->
+	format(pe4kin:send_message(BotName, #{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>,
+											entities => [#{offset => 0, length => size(Nick), type => Type}]}));
 send_message(#{bot_name := BotName, chat_id := ChatId, text := Text}) ->
 	format(pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text})).
 
+-spec edit_message(map()) -> {ok, #tg_id{}} | {error, atom(), term()}.
+edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId, text := Text, usernick := Nick, format := #{usernick := Type}}) ->
+	case pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>,
+										entities => [#{offset => 0, length => size(Nick), type => Type}]}) of
+		{ok, _} -> {ok, TgId};
+		Err -> ?err("ERROR: edit_message: ~p", [Err]), Err
+	end;
 edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId, text := Text}) ->
 	case pe4kin:edit_message(BotName, #{chat_id => ChatId, message_id => Id, text => Text}) of
 		{ok, _} -> {ok, TgId};
-		Err -> ?err("ERROR: : edit_message: ~p", [Err]), Err
+		Err -> ?err("ERROR: edit_message: ~p", [Err]), Err
 	end.
 
 delete_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId}) ->
