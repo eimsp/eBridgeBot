@@ -128,15 +128,17 @@ handle_info(Info, _Client, State) ->
 	{ok, State}.
 
 
--spec send_message(map()) -> {ok, #tg_id{}} | {error, atom(), term()}.
+-spec send_message(#{bot_name => atom(), chat_id => integer(), text => binary(), usernick => binary(), format => #{} | #{usernick => atom() | binary()}}) ->
+	{ok, #tg_id{}} | {error, atom(), term()}.
 send_message(#{bot_name := BotName, chat_id := ChatId, text := Text, usernick := Nick, format := Format}) ->
-	Entities = case Format of #{usernick := Type} -> #{entities => [#{offset => 0, length => size(Nick), type => Type}]}; _ -> #{} end,
-	format(pe4kin:send_message(BotName, Entities#{chat_id => ChatId, text => <<Nick/binary, ":\n", Text/binary>>})).
+	Msg = nick_format(Nick, Text, Format),
+	format(pe4kin:send_message(BotName, Msg#{chat_id => ChatId})).
 
--spec edit_message(map()) -> {ok, #tg_id{}} | {error, atom(), term()}.
+-spec edit_message(#{bot_name => atom(), uid => #tg_id{}, text => binary(), usernick => binary(), format => #{} | #{usernick => atom() | binary()}}) ->
+	{ok, #tg_id{}} | {error, atom(), term()}.
 edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId, text := Text, usernick := Nick, format := Format}) ->
-	Entities = case Format of #{usernick := Type} -> #{entities => [#{offset => 0, length => size(Nick), type => Type}]}; _ -> #{} end,
-	case pe4kin:edit_message(BotName, Entities#{chat_id => ChatId, message_id => Id, text => <<Nick/binary, ":\n", Text/binary>>}) of
+	Msg = nick_format(Nick, Text, Format),
+	case pe4kin:edit_message(BotName, Msg#{chat_id => ChatId, message_id => Id}) of
 		{ok, _} -> {ok, TgId};
 		Err -> ?err("ERROR: edit_message: ~p", [Err]), Err
 	end.
@@ -176,3 +178,8 @@ link_pred(#{group_id := ChatId}) -> %% filter link predicate
 	fun(#xmpp_link{uid = #tg_id{chat_id = ChatId2}}) when  ChatId == ChatId2 -> true;
 		(_Link) -> false
 	end.
+
+-spec nick_format(binary(), binary(), map()) -> map().
+nick_format(Nick, Text, Format) ->
+	Entities = case Format of #{usernick := Type} -> #{entities => [#{offset => 0, length => size(Nick), type => Type}]}; _ -> #{} end,
+	Entities#{text => <<Nick/binary, ":\n", Text/binary>>}.
