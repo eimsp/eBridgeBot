@@ -203,7 +203,7 @@ process_stanza(_, [#message{} = Pkt | _] = StateList) ->
 	process_stanza(StateList).
 
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint} = State | _]) ->
+	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint, format := Format} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("send to third party client: ~p", [Pkt]),
 	{Fun, TmpState} =
@@ -213,8 +213,14 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 			_ ->
 				{send_message, State#{text => Text, usernick => Nick}}
 		end,
+	TmpState2 = %% if system message
+		case {xmpp:get_subtag(Pkt, #bot{}), Format} of
+			{#bot{}, #{system := Type}} when Nick == <<"system">> ->
+				TmpState#{format => Format#{text => Type}};
+			_ -> TmpState
+		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
-	[case Module:Fun(TmpState#{chat_id => ChatId}) of
+	[case Module:Fun(TmpState2#{chat_id => ChatId}) of
 		 {ok, Uid} ->
 			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err

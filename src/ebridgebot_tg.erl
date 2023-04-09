@@ -181,6 +181,10 @@ link_pred(#{group_id := ChatId}) -> %% filter link predicate
 
 -spec msg_format(binary(), binary(), map()) -> map().
 msg_format(Nick, Text, Format) ->
-	Entities = case Format of #{usernick := NickType} -> [#{offset => 0, length => size(Nick), type => NickType}]; _ -> [] end,
-	Entities2 = case Format of #{text := TextType} -> [#{offset => size(Nick)+2, length => size(Text), type => TextType} | Entities]; _ -> Entities end,
-	#{entities => Entities2, text => <<Nick/binary, ":\n", Text/binary>>}.
+	{_, Entities} =
+		lists:foldl(
+			fun({Key, Val}, {Offset, Acc}) ->
+				Len = size(Val),
+				{Offset + Len, case Format of #{Key := Type} -> [#{offset => Offset, length => Len, type => Type} | Acc]; _ -> Acc end}
+			end, {0, []}, [{usernick, Nick2 = <<Nick/binary, ":\n">>}, {text, Text}]),
+	#{entities => Entities, text => <<Nick2/binary, Text/binary>>}.
