@@ -213,10 +213,10 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 			_ ->
 				{send_message, State#{text => Text, usernick => Nick}}
 		end,
-
+	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
 	[case Module:Fun(TmpState#{chat_id => ChatId}) of
 		 {ok, Uid} ->
-			 ebridgebot:write_link(BotId, xmpp:get_subtag(Pkt, #origin_id{}), Uid, xmpp:get_subtag(Pkt, #mam_archived{}));
+			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
