@@ -21,7 +21,8 @@ init(Args) ->
 			K <- [bot_id, component, nick, linked_rooms, module]],
 	UploadHost = proplists:get_value(upload_host, Args, <<"upload.localhost">>),
 	UploadEndpoint = proplists:get_value(upload_endpoint, Args),
-	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = MucJid} || {TgId, MucJid} <- Rooms],
+	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = MucJid, password = case MucMap of #{password := P} -> P; _-> undefined end}
+		|| {TgId, #{jid := MucJid} = MucMap} <- Rooms],
 	Format = proplists:get_value(format, Args, #{}),
 
 	application:start(mnesia),
