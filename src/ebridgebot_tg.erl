@@ -10,20 +10,18 @@
 -define(CLEARING_INTERVAL, 24). %% in hours
 -define(LIFE_SPAN, 48). %% in hours
 
-init(Args) ->
-	?dbg("init pe4kin with args: ~p", [Args]),
+init(#{bot_name := BotName, token := Token} = Args) ->
+	?dbg("ebridgebot_tg: init pe4kin with args: ~p", [Args]),
 	application:ensure_all_started(pe4kin),
-	[BotName, BotToken] = [proplists:get_value(K, Args) || K <- [name, token]],
-	pe4kin:launch_bot(BotName, BotToken, #{receiver => true}),
+	pe4kin:launch_bot(BotName, Token, #{receiver => true}),
 	pe4kin_receiver:subscribe(BotName, self()),
 	pe4kin_receiver:start_http_poll(BotName, #{limit => 100, timeout => 60}),
 
-	ClearingInterval = proplists:get_value(clearing_interval, Args, ?CLEARING_INTERVAL),
-	LifeSpan = proplists:get_value(life_span, Args, ?LIFE_SPAN),
-	IgnoreCommands = proplists:get_value(ignore_commands, Args, true),
+	DefaultState = #{clearing_interval => ?CLEARING_INTERVAL, life_span => ?LIFE_SPAN, ignore_commands => true},
+	State = #{clearing_interval := ClearingInterval, life_span := LifeSpan} = maps:merge(DefaultState, Args),
 	self() ! {link_scheduler, ClearingInterval * 60 * 60 * 1000, LifeSpan * 60 * 60 * 1000}, %% start scheduler
 
-	{ok, #{bot_name => BotName, token => BotToken, ignore_commands => IgnoreCommands}}.
+	{ok, State}.
 
 handle_info({telegram_update, BotName, _SendType,
 		#{<<"chat">>        := #{<<"type">> := Type},
@@ -124,7 +122,7 @@ handle_info({pe4kin_send, ChatId, Text}, _Client, #{bot_name := BotName} = State
 	?dbg("pe4kin_send: ~p", [Res]),
 	{ok, State};
 handle_info(Info, _Client, State) ->
-	?dbg("handle component: ~p", [Info]),
+	?dbg("handle component: ~p\n~p", [Info, State]),
 	{ok, State}.
 
 

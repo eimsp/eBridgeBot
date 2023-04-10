@@ -35,12 +35,12 @@ init([]) ->
     Bots = application:get_env(ebridgebot, bots, []),
     ChildSpecs = [
         #{id => BotId,
-            start => {ebridgebot_component, start_link, [BotId, Args]},
+            start => {ebridgebot_component, start_link, [Args]},
             restart => permanent,
             shutdown => 2000,
             type => worker,
             modules => [escalus_component]}
-        || {BotId, Args} <- Bots],
+        || Args = #{bot_id := BotId} <- Bots],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions

@@ -4,27 +4,21 @@
 -include("ebridgebot.hrl").
 
 %% API
--export([start/2, start_link/1, start_link/2, init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
+-export([start/1, start_link/1, init/1, handle_info/3, process_stanza/3, process_stanza/2, process_stanza/1, terminate/2, stop/1,
 	state/1, state/2, pid/1, filter_pred/1]).
 
-start(BotId, Args) ->
-	escalus_component:start({local, BotId}, ebridgebot_component, Args, [{bot_id, BotId} | Args]).
+start(#{bot_id := BotId} = Args) ->
+	escalus_component:start({local, BotId}, ebridgebot_component, maps:to_list(Args), Args).
 
-start_link(BotId, Args) ->
-	start_link([{bot_id, BotId} | Args]).
 start_link(Args) ->
-	escalus_component:start_link(?MODULE, Args, Args).
+	escalus_component:start_link(?MODULE, maps:to_list(Args), Args).
 
 init(Args) ->
-	[BotId, Component, Nick, Rooms, Module] =
-		[proplists:get_value(K, Args) ||
-			K <- [bot_id, component, nick, linked_rooms, module]],
-	UploadHost = proplists:get_value(upload_host, Args, <<"upload.localhost">>),
-	UploadEndpoint = proplists:get_value(upload_endpoint, Args),
+	?dbg("~p: init with args: ~p", [?MODULE, Args]),
+	DefaultState = #{rooms => [], upload_host => <<"upload.localhost">>, upload_endpoint => undefined, format => #{}},
+	State = #{rooms := Rooms, bot_id := BotId, module := Module} = maps:merge(DefaultState, Args),
 	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = MucJid, password = case MucMap of #{password := P} -> P; _-> undefined end}
 		|| {TgId, #{jid := MucJid} = MucMap} <- Rooms],
-	Format = proplists:get_value(format, Args, #{}),
-
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
 		[{attributes, record_info(fields, xmpp_link)},
@@ -33,9 +27,7 @@ init(Args) ->
 
 	self() ! {linked_rooms, presence, available}, %% enter to all linked rooms
 
-	{ok, State} = Module:init(Args),
-	{ok, State#{bot_id => BotId, component => Component, nick => Nick,
-		rooms => LinkedRooms, module => Module, upload_host => UploadHost, upload_endpoint => UploadEndpoint, upload => #{}, format => Format}}.
+	Module:init(State#{rooms => LinkedRooms, upload => #{}}).
 
 handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% ClearInterval and LifeSpan in milliseconds
 	?dbg("link_scheduler", []),
@@ -147,6 +139,7 @@ process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{serve
 			{ok, State}
 	end;
 process_stanza(#message{} = Pkt, Client, #{} = State) ->
+	?dbg("!!!~p", [Pkt]),
 	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, State, Client], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and

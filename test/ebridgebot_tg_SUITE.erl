@@ -44,14 +44,22 @@ init_per_testcase(upload_story, Config) ->
 init_per_testcase(CaseName, Config) ->
 	meck:new(ebridgebot_component, [no_link, passthrough]),
 	meck:expect(ebridgebot_component, process_stanza, send_stanza_fun(self())),
-	[{BotId, BotArgs} | _] = escalus_ct:get_config(tg_bots),
-	Args = [{component, escalus_ct:get_config(ejabberd_service)},
-		{host, escalus_ct:get_config(ejabberd_addr)},
-		{upload_host, escalus_ct:get_config(upload_host)},
-		{password, escalus_ct:get_config(ejabberd_service_password)},
-		{port, escalus_ct:get_config(ejabberd_service_port)},
-		{linked_rooms, []}] ++ BotArgs,
-	{ok, Pid} = wait_for_result(fun() -> ebridgebot_component:start(BotId, Args) end,
+	[BotArgs = #{bot_id := _BotId} | _] = escalus_ct:get_config(tg_bots),
+	Args = BotArgs#{component => escalus_ct:get_config(ejabberd_service),
+		host => escalus_ct:get_config(ejabberd_addr),
+		upload_host => escalus_ct:get_config(upload_host),
+		password => escalus_ct:get_config(ejabberd_service_password),
+		port => escalus_ct:get_config(ejabberd_service_port),
+		rooms => []
+	},
+
+%%	Args = [{component, escalus_ct:get_config(ejabberd_service)},
+%%		{host, escalus_ct:get_config(ejabberd_addr)},
+%%		{upload_host, escalus_ct:get_config(upload_host)},
+%%		{password, escalus_ct:get_config(ejabberd_service_password)},
+%%		{port, escalus_ct:get_config(ejabberd_service_port)},
+%%		{linked_rooms, []}] ++ BotArgs,
+	{ok, Pid} = wait_for_result(fun() -> ebridgebot_component:start(Args) end,
 					fun({ok, _}) -> true; (_) -> false end),
 	[_Host, MucHost, Rooms] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
@@ -73,7 +81,8 @@ init_per_testcase(CaseName, Config) ->
 				 fun(#{rooms := [#muc_state{state = {in, _}}]}) -> true; (_) -> false end),
 		 ok
 	 end || {_, Opts} <- Rooms],
-	[{component_pid, Pid}, {bot_id, BotId} | Args ++ escalus:init_per_testcase(CaseName, Config)].
+	[{component_pid, Pid} | maps:to_list(Args) ++ escalus:init_per_testcase(CaseName, Config)].
+%%	[{component_pid, Pid}, {bot_id, BotId} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
 
 end_per_testcase(upload_story, Config) ->
@@ -121,7 +130,7 @@ muc_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, bot_name]],
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			enter_room(Alice, RoomJid, AliceNick),
@@ -172,7 +181,7 @@ subscribe_muc_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	MucJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, Component, BotName, Nick] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name, nick]],
+	[BotId, Pid, Component, BotName, Nick] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, bot_name, nick]],
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			enter_room(Alice, MucJid, AliceNick),
@@ -213,7 +222,7 @@ moderate_story(Config) ->
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, bot_name]],
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = AliceJid} = Alice) ->
 			DiscoInfoIq = #xmlel{attrs = Attrs} =
@@ -277,7 +286,7 @@ upload_story(Config) ->
 	[MucHost, UploadHost] = [escalus_config:get_ct(K) || K <- [muc_host, upload_host]],
 	MucJid = jid:to_string({RoomNode, MucHost, <<>>}),
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
-	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, name]],
+	[BotId, Pid, _Component, BotName] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, bot_name]],
 	escalus:story(Config, [{alice, 1}],
 		fun(#client{jid = _AliceJid} = Alice) ->
 			DiscoInfoIq = #iq{type = get, sub_els = [#disco_info{}], to = UploadJID = jid:decode(UploadHost)},
