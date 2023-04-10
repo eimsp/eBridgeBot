@@ -9,6 +9,7 @@
 -record(muc_state, {
 	group_id = [] :: any(),
 	muc_jid = [] :: binary(),
+	password = undefined :: binary(),
 	state = {out, unsubscribed} :: {out | in | pending, subscribes | unsubscribed}}).
 
 -record(xmpp_link, {
