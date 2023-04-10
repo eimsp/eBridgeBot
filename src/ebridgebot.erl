@@ -96,6 +96,14 @@ iq(subscribe, From, To, Nick, Password) ->
 iq(unsubscribe, From, To, Nick, _Password) ->
 	iq([#muc_unsubscribe{nick = Nick}], From, To).
 
+-spec password(#{type => atom(), password => binary() | undefined}) -> binary() | undefined.
+password(#{type := Type, password := Password}) when Type == available; Type == subscribe ->
+	Password;
+password(#{type := subscribe}) ->
+	<<>>;
+password(_) ->
+	undefined.
+
 -spec edit_msg(jid(), jid(), binary(), binary()) -> message().
 edit_msg(From, To, Text, ReplaceId) ->
 	OriginId = ebridgebot:gen_uuid(),
