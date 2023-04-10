@@ -60,13 +60,13 @@ handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->
 			_ -> Rooms
 		end,
 	{ok, State#{rooms => NewRooms}};
-handle_info({presence, Type, MucJid} = Info, Client, #{component := Component, nick := Nick} = State)
+handle_info({presence, Type, #{jid := MucJid}} = Info, Client, #{component := Component, nick := Nick} = State)
 	when Type == available; Type == unavailable ->
 	?dbg("handle: ~p", [Info]),
 	EnterPresence = #presence{type = Type, from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick), sub_els = [#muc{}]},
 	escalus:send(Client, xmpp:encode(EnterPresence)),
 	{ok, State};
-handle_info({event, SubAction, MucJid} = Info, Client, #{component := Component, nick := Nick} = State)
+handle_info({event, SubAction, #{jid := MucJid}} = Info, Client, #{component := Component, nick := Nick} = State)
 	when SubAction == subscribe; SubAction == unsubscribe ->
 	?dbg("handle: ~p", [Info]),
 	escalus:send(Client, xmpp:encode(ebridgebot:iq(SubAction, jid:make(Component), jid:decode(MucJid), Nick))),
@@ -86,7 +86,7 @@ handle_info({linked_rooms, Type, Action} = Info, Client, #{rooms := Rooms} = Sta
 			fun(#muc_state{muc_jid = MucJid, state = S} = MucState, Acc) when element(I, S) == Prev ->
 				case lists:keyfind(MucJid, #muc_state.muc_jid, Acc) of
 					#muc_state{} -> ok;
-					false -> handle_info({Type, Action, MucJid}, Client, State)
+					false -> handle_info({Type, Action, #{jid => MucJid}}, Client, State)
 				end,
 				[MucState#muc_state{state = setelement(I, S, Next)} | Acc];
 				(MucState, Acc) ->
