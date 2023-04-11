@@ -17,7 +17,7 @@ init(Args) ->
 	?dbg("~p: init with args: ~p", [?MODULE, Args]),
 	DefaultState = #{rooms => [], upload_host => <<"upload.localhost">>, upload_endpoint => undefined, format => #{}},
 	State = #{rooms := Rooms, bot_id := BotId, module := Module} = maps:merge(DefaultState, Args),
-	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = MucJid, password = case MucMap of #{password := P} -> P; _-> undefined end}
+	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = string:lowercase(MucJid), password = case MucMap of #{password := P} -> P; _-> undefined end}
 		|| {TgId, #{jid := MucJid} = MucMap} <- Rooms],
 	application:start(mnesia),
 	mnesia:create_table(ebridgebot:bot_table(BotId),
@@ -30,29 +30,33 @@ init(Args) ->
 	Module:init(State#{rooms => LinkedRooms, upload => #{}}).
 
 handle_info({link_scheduler, ClearInterval, LifeSpan} = Info, _Client, State) -> %% ClearInterval and LifeSpan in milliseconds
-	?dbg("link_scheduler", []),
+	?dbg("handle: ~p", [Info]),
 	catch erlang:cancel_timer(maps:get(link_scheduler_ref, State)),
 	handle_info({remove_old_links, erlang:system_time(microsecond) - LifeSpan * 1000}, _Client, State),
 	{ok, TRef} = timer:send_after(ClearInterval, Info),
 	{ok, State#{link_scheduler_ref => TRef}};
 handle_info(stop_link_scheduler, _Client, #{link_scheduler_ref := TRef} = State) ->
-	?dbg("stop_link_scheduler", []),
+	?dbg("handle: ~p", [stop_link_scheduler]),
 	catch erlang:cancel_timer(TRef),
 	{ok, maps:remove(link_scheduler_ref, State)};
-handle_info({remove_old_links, OldestTS}, _Client, #{bot_id := BotId} = State) ->
-	?dbg("remove_old_links", []),
+handle_info({remove_old_links, OldestTS} = Info, _Client, #{bot_id := BotId} = State) ->
+	?dbg("handle: ~p", [Info]),
 	MatchSpec = [{{Table = ebridgebot:bot_table(BotId), '$1', '_', '_', '_'}, [{'<', '$1', OldestTS}], ['$1']}],
 	spawn(fun() -> [mnesia:dirty_delete(Table, K) || K <- mnesia:dirty_select(Table, MatchSpec)] end),
 	{ok, State};
 
-handle_info({link_rooms, ChatId, MucJid}, _Client, #{rooms := Rooms} = State) ->
+handle_info({add_room, ChatId, MucJid}, Client, State) ->
+	handle_info({add_room, ChatId, MucJid, undefined}, Client, State);
+handle_info({add_room, ChatId, MucJid, Password} = Info, _Client, #{rooms := Rooms} = State) ->
+	?dbg("handle: ~p", [Info]),
 	LMucJid = string:lowercase(MucJid),
-	NewRooms =
-		case [ok || #muc_state{group_id = ChatId2, muc_jid = J} <- Rooms, ChatId == ChatId2, LMucJid == J] of
-			[] -> [#muc_state{group_id = ChatId, muc_jid = LMucJid} | Rooms];
-			_ -> Rooms
+	LinkedRooms =
+		case [MucState#muc_state{password = Password} ||
+				#muc_state{group_id = ChatId2, muc_jid = J} = MucState <- Rooms, ChatId == ChatId2, LMucJid == J] of
+			[] -> [#muc_state{group_id = ChatId, muc_jid = LMucJid, password = Password} | Rooms];
+			Rooms2 -> Rooms2
 		end,
-	{ok, State#{rooms => NewRooms}};
+	{ok, State#{rooms => LinkedRooms}};
 handle_info({presence, #{type := Type, jid := MucJid} = MucMap} = Info, Client, #{component := Component, nick := Nick} = State)
 	when Type == available; Type == unavailable ->
 	?dbg("handle: ~p", [Info]),
@@ -139,7 +143,6 @@ process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{serve
 			{ok, State}
 	end;
 process_stanza(#message{} = Pkt, Client, #{} = State) ->
-	?dbg("!!!~p", [Pkt]),
 	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, State, Client], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and

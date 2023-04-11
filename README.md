@@ -53,7 +53,7 @@ The application can be configured by modifying the `etc/sys.config` file. The fo
 ```
 $ rebar3 shell
 ```
-####start bot component manually
+####Start bot component manually
 ```
 $ Args = #{bot_id => tg_bot,
             component => <<"tg.localhost">>,

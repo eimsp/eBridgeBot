@@ -71,7 +71,7 @@ init_per_testcase(CaseName, Config) ->
 				 timer:sleep(100);
 			 _ -> ok
 		 end,
-		 Pid ! {link_rooms, ChatId, jid:to_string({Room, MucHost, <<>>})},
+		 Pid ! {add_room, ChatId, jid:to_string({Room, MucHost, <<>>})},
 		 #{bot_id := BotId, rooms := [#muc_state{group_id = ChatId, state = {out, unsubscribed}}]} = ebridgebot_component:state(Pid),
 
 		 Pid ! {linked_rooms, presence, available},
