@@ -184,5 +184,5 @@ msg_format(Nick, Text, Format) ->
 			fun({Key, Val}, {Offset, Acc}) ->
 				Len = size(Val),
 				{Offset + Len, case Format of #{Key := Type} -> [#{offset => Offset, length => Len, type => Type} | Acc]; _ -> Acc end}
-			end, {0, []}, [{usernick, Nick2 = <<Nick/binary, ":\n">>}, {text, Text}]),
+			end, {0, []}, [{usernick, Nick2 = <<?NICK(Nick)>>}, {text, Text}]),
 	#{entities => Entities, text => <<Nick2/binary, Text/binary>>}.

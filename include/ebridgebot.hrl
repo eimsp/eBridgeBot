@@ -3,8 +3,9 @@
 		{ok, true} -> error_logger:info_msg(Fmt, Args);
 		_ -> false
 	end).
-
 -define(err(Fmt, Args), error_logger:error_msg(Fmt, Args)).
+
+-define(NICK(Nick), <<Nick/binary, ":\n">>/binary).
 
 -record(muc_state, {
 	group_id = [] :: any(),
