@@ -3,29 +3,7 @@ Erlang based platform for bridges between a growing number of protocols.
 eBridgeBot is an OTP application implemented in Erlang 
 that integrates XMPP components through API with third-party messengers. 
 
-[comment]: <> (At this stage, with eBridgeBot you can receive, send, edit and delete )
-
-[comment]: <> (messages using [telegram bot API]&#40;https://core.telegram.org/bots/api&#41;.)
-
-[comment]: <> (## Installation)
-
-[comment]: <> (# throttle)
-
-[comment]: <> ([![Hex.pm]&#40;https://img.shields.io/hexpm/v/lambda_throttle.svg&#41;]&#40;https://hex.pm/packages/lambda_throttle&#41;)
-
-[comment]: <> ([![Build Status]&#40;https://travis-ci.org/lambdaclass/throttle.svg?branch=master&#41;]&#40;https://travis-ci.org/lambdaclass/throttle&#41;)
-
-[comment]: <> ([![Coverage Status]&#40;https://coveralls.io/repos/github/lambdaclass/throttle/badge.svg?branch=master&#41;]&#40;https://coveralls.io/github/lambdaclass/throttle?branch=master&#41;)
-
-[comment]: <> (An OTP application to implement throttling/rate limiting of resources.)
-
 ## Rebar3 dependency
-
-[comment]: <> (```erl)
-
-[comment]: <> ({throttle, "0.3.0", {pkg, lambda_throttle}})
-
-[comment]: <> (```)
 
 ## Build
 
@@ -56,7 +34,7 @@ The application can be configured by modifying the `etc/sys.config` file. The fo
         component => <<"tg.localhost">>, %% XMPP component host name
         bot_name => <<"ebridge_bot">>, %% The telegram bot name
         host => <<"127.0.0.1">>, %% XMPP server address
-        upload_host => <<"upload.localhost">>,
+        upload_host => <<"upload.localhost">>, %% upload XMPP host
         upload_endpoint => undefined, %% url upload endpoint must be without port and not localhost
         nick => <<"tg_bot">>, %% XMPP nick
         password => <<"secret">>, %% XMPP component password
@@ -72,12 +50,11 @@ The application can be configured by modifying the `etc/sys.config` file. The fo
 ## Examples
 
 ### Shell
-``` erlang
+```
 $ rebar3 shell
 ```
 ####start bot component manually
-
-```erlang
+```
 $ Args = #{bot_id => tg_bot,
             component => <<"tg.localhost">>,
             bot_name => <<"ebridge_bot">>,
