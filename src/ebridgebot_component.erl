@@ -142,8 +142,13 @@ process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{serve
 		_ ->
 			{ok, State}
 	end;
-process_stanza(#message{} = Pkt, Client, #{} = State) ->
-	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, State, Client], ?MODULE, process_stanza))();
+process_stanza(#message{id = Id} = Pkt, Client, #{} = State) ->
+	Pkt2 =
+		case xmpp:get_subtag(Pkt, #origin_id{}) of
+			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
+			_ -> Pkt
+		end,
+	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt2, State, Client], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
