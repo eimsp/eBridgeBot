@@ -209,16 +209,16 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 			Found when is_binary(UploadEndpoint), Found /= nomatch -> %% TODO if endpoint path has port then tg does not allow upload
 				{send_data, State#{mime => hd(mimetypes:filename(Text)), file_uri => Text, caption => <<Nick/binary, ":">>}};
 			_ ->
-				{send_message, State#{text => Text, usernick => Nick}}
+				{send_message, State#{text => Text}}
 		end,
-	TmpState2 = %% if system message
+	{TmpState2, Nick2} =
 		case {xmpp:get_subtag(Pkt, #bot{}), Format} of
-			{#bot{}, #{system := Type}} when Nick == <<"system">> ->
-				TmpState#{format => Format#{text => Type}};
-			_ -> TmpState
+			{#bot{type = <<"system">>}, #{system := Type}} when Nick == <<"system">> -> %% if bot message
+				{TmpState#{format => Format#{text => Type}}, <<>>};
+			_ -> {TmpState, Nick}
 		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
-	[case Module:Fun(TmpState2#{chat_id => ChatId}) of
+	[case Module:Fun(TmpState2#{chat_id => ChatId, usernick => Nick2}) of
 		 {ok, Uid} ->
 			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err

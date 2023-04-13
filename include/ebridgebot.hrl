@@ -5,7 +5,7 @@
 	end).
 -define(err(Fmt, Args), error_logger:error_msg(Fmt, Args)).
 
--define(NICK(Nick), <<Nick/binary, ":\n">>/binary).
+-define(NICK(Nick), (case Nick of <<>> -> <<>>; _ -> <<Nick/binary, ":\n">> end)/binary).
 
 -record(muc_state, {
 	group_id = [] :: any(),
