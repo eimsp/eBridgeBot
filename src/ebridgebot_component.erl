@@ -222,8 +222,15 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 				{TmpState#{format => Format#{text => Type}}, BotNick};
 			_ -> {TmpState, Nick}
 		end,
+	TmpState3 =
+		case xmpp:get_subtag(Pkt, #entities{}) of
+			#entities{items = Es} ->
+				TmpState2#{entities => [#{type => T, offset => Offset, length => Length}
+					|| #entity{type = T, offset = Offset, length = Length} <- Es]};
+			_ -> TmpState2#{entities => []}
+		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
-	[case Module:Fun(TmpState2#{chat_id => ChatId, usernick => Nick2}) of
+	[case Module:Fun(TmpState3#{chat_id => ChatId, usernick => Nick2}) of
 		 {ok, Uid} ->
 			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err
