@@ -135,7 +135,8 @@ send_message(#{bot_name := BotName, chat_id := ChatId, text := Text, usernick :=
 
 -spec edit_message(#{bot_name => atom(), uid => #tg_id{}, text => binary(), usernick => binary(), format => #{} | #{usernick => atom() | binary()}}) ->
 	{ok, #tg_id{}} | {error, atom(), term()}.
-edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId, text := Text, usernick := Nick, format := Format, entities := Entities} = S) ->
+edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId, text := Text, usernick := Nick, format := Format} = S) ->
+	Entities = case S of #{entities := Es} -> Es; _ -> [] end,
 	Msg = msg_format(Nick, Text, Format, Entities),
 	case pe4kin:edit_message(BotName, Msg#{chat_id => ChatId, message_id => Id}) of
 		{ok, _} -> {ok, TgId};
