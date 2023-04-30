@@ -218,8 +218,8 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 		end,
 	{TmpState2, Nick2} =
 		case {xmpp:get_subtag(Pkt, #bot{}), Format} of
-			{#bot{nick = BotNick, type = system}, #{system := Type}} -> %% if bot message
-				{TmpState#{format => Format#{text => Type}}, BotNick};
+			{#bot{nick = _BotNick, type = system}, #{system := Type}} -> %% if bot message
+				{TmpState#{format => Format#{text => Type}}, <<>>};
 			_ -> {TmpState, Nick}
 		end,
 	TmpState3 =
