@@ -226,7 +226,7 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 		case xmpp:get_subtag(Pkt, #entities{}) of
 			#entities{items = Es} ->
 				TmpState2#{entities => [#{type => T, offset => Offset, length => Length}
-					|| #entity{type = T, offset = Offset, length = Length} <- Es]};
+					|| #entity{type = T, offset = Offset, length = Length} <- ebridgebot:merge_entities(Es)]};
 			_ -> TmpState2#{entities => []}
 		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],

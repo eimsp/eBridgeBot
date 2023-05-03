@@ -159,3 +159,16 @@ send(edit_msg, {Module, Client}, BotId, From, To, Uid, Nick, Text) when Module =
 	end;
 send(SendType, Client, BotId, From, To, Uid, Nick, Text) when SendType == msg; SendType == edit_msg ->
 	send(SendType, {escalus, Client}, BotId, From, To, Uid, Nick, Text).
+
+merge_entities(Entities) ->
+	lists:flatten(tuple_to_list(
+		lists:foldl(
+			fun(#entity{} = E, {[], Acc}) ->
+				{E, Acc};
+				(#entity{offset = Offset, length = Length, type = Type},
+					{#entity{offset = LastOffset, length = LastLength, type = Type} = E, Acc})
+					when LastOffset + LastLength == Offset ->
+					{E#entity{length = Offset + Length - LastOffset}, Acc};
+				(#entity{} = E, {#entity{} = E2, Acc}) ->
+					{E, Acc ++ [E2]}
+			end, {[], []}, Entities))).
