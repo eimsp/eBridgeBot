@@ -59,16 +59,31 @@ handle_info({telegram_update, BotName, SendType,
 						send_type = SendType}}}}
 	end;
 handle_info({telegram_update, BotName, SendType,
-	#{<<"reply_to_message">> :=
+	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
+		<<"reply_to_message">> :=
 		#{<<"from">> :=
-			#{<<"username">> := QuotedUser},
-			  <<"text">> := QuotedText},
-	 <<"text">> := Text} = TgMsg}, Client, State) ->
+		#{<<"username">> := QuotedUser},
+			<<"message_id">> := Id,
+			<<"text">> := QuotedText},
+		<<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
-	TgMsg2 = maps:remove(<<"reply_to_message">>, TgMsg),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
-	Text3 = <<$>, QuotedUser/binary, "\n>", Text2/binary, $\n, Text/binary>>,
-	handle_info({telegram_update, BotName, SendType, TgMsg2#{<<"text">> := Text3}}, Client, State);
+	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
+	Text3 = <<RepliedText/binary, $\n, Text/binary>>,
+	ebridgebot:to_rooms(CurChatId, Rooms,
+		fun(ChatId, MucJid) ->
+			Uid = #tg_id{chat_id = ChatId, id = Id},
+			SubEls =
+				case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
+					[#xmpp_link{origin_id = OriginId} | _] ->
+						[#reply{id = OriginId, to = jid:replace_resource(jid:decode(MucJid), Nick)},
+							#fallback{for = <<"urn:xmpp:reply:0">>, body = [#fb_body{start = 0, 'end' = byte_size(RepliedText)}]}];
+					[] ->
+						[]
+				end,
+			ebridgebot:send(SendType, Client, BotId, Component, MucJid, Uid, QuotedUser, Text3, SubEls)
+		end),
+	{ok, State};
 handle_info({telegram_update, BotName, SendType,
 		#{<<"forward_from">> := #{<<"username">> := QuotedUser}, <<"text">> := Text} = TgMsg}, Client, State) ->
 	?dbg("telegram_update: forward_from: ~p", [TgMsg]),
@@ -104,7 +119,7 @@ handle_info({telegram_update, BotName, SendType,
 		<<"message_id">> := Id,
 		<<"text">> := Text}} = TgMsg, Client,
 	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
-	?dbg("telegram_update: msg to groupchat: ~p", [TgMsg]),
+	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
 			ebridgebot:send(SendType, Client, BotId, Component, MucJid, #tg_id{chat_id = ChatId, id = Id}, TgUserName, Text)
