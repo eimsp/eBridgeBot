@@ -60,12 +60,11 @@ handle_info({telegram_update, BotName, SendType,
 	end;
 handle_info({telegram_update, BotName, SendType,
 	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
-		<<"reply_to_message">> :=
-		#{<<"from">> :=
-		#{<<"username">> := QuotedUser},
-			<<"message_id">> := Id,
-			<<"text">> := QuotedText},
-		<<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	  <<"reply_to_message">> :=
+		#{<<"from">> := #{<<"username">> := QuotedUser},
+		  <<"message_id">> := Id,
+		  <<"text">> := QuotedText},
+	  <<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
@@ -77,7 +76,7 @@ handle_info({telegram_update, BotName, SendType,
 				case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
 					[#xmpp_link{origin_id = OriginId} | _] ->
 						[#reply{id = OriginId, to = jid:replace_resource(jid:decode(MucJid), Nick)},
-							#fallback{for = <<"urn:xmpp:reply:0">>, body = [#fb_body{start = 0, 'end' = byte_size(RepliedText)}]}];
+							#fallback{for = ?NS_REPLY, body = [#fb_body{start = 0, 'end' = byte_size(RepliedText)}]}];
 					[] ->
 						[]
 				end,

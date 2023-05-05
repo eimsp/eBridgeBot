@@ -1,3 +1,5 @@
+-define(NS_REPLY, <<"urn:xmpp:reply:0">>).
+
 -define(dbg(Fmt, Args),
 	case xmpp_config:debug(global) of
 		{ok, true} -> error_logger:info_msg(Fmt, Args);
