@@ -142,8 +142,13 @@ process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{serve
 		_ ->
 			{ok, State}
 	end;
-process_stanza(#message{} = Pkt, Client, #{} = State) ->
-	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, State, Client], ?MODULE, process_stanza))();
+process_stanza(#message{id = Id} = Pkt, Client, #{} = State) ->
+	Pkt2 =
+		case xmpp:get_subtag(Pkt, #origin_id{}) of
+			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
+			_ -> Pkt
+		end,
+	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt2, State, Client], ?MODULE, process_stanza))();
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
@@ -209,16 +214,23 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 			Found when is_binary(UploadEndpoint), Found /= nomatch -> %% TODO if endpoint path has port then tg does not allow upload
 				{send_data, State#{mime => hd(mimetypes:filename(Text)), file_uri => Text, caption => <<Nick/binary, ":">>}};
 			_ ->
-				{send_message, State#{text => Text, usernick => Nick}}
+				{send_message, State#{text => Text}}
 		end,
-	TmpState2 = %% if system message
+	{TmpState2, Nick2} =
 		case {xmpp:get_subtag(Pkt, #bot{}), Format} of
-			{#bot{}, #{system := Type}} when Nick == <<"system">> ->
-				TmpState#{format => Format#{text => Type}};
-			_ -> TmpState
+			{#bot{nick = _BotNick, type = system}, #{system := Type}} -> %% if bot message
+				{TmpState#{format => Format#{text => Type}}, <<>>};
+			_ -> {TmpState, Nick}
+		end,
+	TmpState3 =
+		case xmpp:get_subtag(Pkt, #entities{}) of
+			#entities{items = Es} ->
+				TmpState2#{entities => [#{type => T, offset => Offset, length => Length}
+					|| #entity{type = T, offset = Offset, length = Length} <- ebridgebot:merge_entities(Es)]};
+			_ -> TmpState2#{entities => []}
 		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
-	[case Module:Fun(TmpState2#{chat_id => ChatId}) of
+	[case Module:Fun(TmpState3#{chat_id => ChatId, usernick => Nick2}) of
 		 {ok, Uid} ->
 			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err

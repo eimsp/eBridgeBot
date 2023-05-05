@@ -103,9 +103,12 @@ password(_) -> undefined.
 
 -spec edit_msg(jid(), jid(), binary(), binary()) -> message().
 edit_msg(From, To, Text, ReplaceId) ->
+	edit_msg(From, To, Text, ReplaceId, []).
+-spec edit_msg(jid(), jid(), binary(), binary(), list(term())) -> message().
+edit_msg(From, To, Text, ReplaceId, SubEls) ->
 	OriginId = ebridgebot:gen_uuid(),
 	#message{id = OriginId, type = groupchat, from = From, to = To, body = [#text{data = Text}],
-		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId}]}.
+		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId} | SubEls]}.
 
 -spec write_link(atom(), binary(), any()) -> ok.
 write_link(BotId, OriginId, Uid) ->
@@ -141,21 +144,38 @@ to_rooms(CurChatId, Rooms, Fun) ->
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
 
 -spec send(msg | edit_msg, pid() | {escalus | escalus_component, term()}, atom(), binary(), binary(), any(), binary(), binary()) -> ok.
-send(SendType, Pid, BotId, From, To, Uid, Nick, Text) when is_pid(Pid) ->
-	send(SendType, {escalus_component, Pid}, BotId, From, To, Uid, Nick, Text);
-send(msg, {Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
+send(SendType, Pid, BotId, From, To, Uid, Nick, Text) ->
+	send(SendType, Pid, BotId, From, To, Uid, Nick, Text, []).
+
+-spec send(msg | edit_msg, pid() | {escalus | escalus_component, term()}, atom(), binary(), binary(), any(), binary(), binary(), list(term())) -> ok.
+send(SendType, Pid, BotId, From, To, Uid, Nick, Text, SubEls) when is_pid(Pid) ->
+	send(SendType, {escalus_component, Pid}, BotId, From, To, Uid, Nick, Text, SubEls);
+send(msg, {Module, Client}, BotId, From, To, Uid, Nick, Text, SubEls) when Module == escalus; Module == escalus_component ->
 	OriginId = ebridgebot:gen_uuid(),
 	Module:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(From), to = jid:decode(To),
-		body = [#text{data = <<Nick/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
+		body = [#text{data = <<?NICK(Nick), Text/binary>>}], sub_els = [#origin_id{id = OriginId} | SubEls]})),
 	ebridgebot:write_link(BotId, OriginId, Uid);
-send(edit_msg, {Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
+send(edit_msg, {Module, Client}, BotId, From, To, Uid, Nick, Text, _SubEls) when Module == escalus; Module == escalus_component ->
 	case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
 		[#xmpp_link{origin_id = ReplaceId, uid = Uid} | _] ->
 			Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(From), jid:decode(To),
-				<<Nick/binary, ":\n", Text/binary>>, ReplaceId),
+				<<?NICK(Nick), Text/binary>>, ReplaceId),
 			Module:send(Client, xmpp:encode(Pkt)),
 			ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
 		_ -> ok
 	end;
-send(SendType, Client, BotId, From, To, Uid, Nick, Text) when SendType == msg; SendType == edit_msg ->
-	send(SendType, {escalus, Client}, BotId, From, To, Uid, Nick, Text).
+send(SendType, Client, BotId, From, To, Uid, Nick, Text, Els) when SendType == msg; SendType == edit_msg ->
+	send(SendType, {escalus, Client}, BotId, From, To, Uid, Nick, Text, Els).
+
+merge_entities(Entities) ->
+	lists:flatten(tuple_to_list(
+		lists:foldl(
+			fun(#entity{} = E, {[], Acc}) ->
+				{E, Acc};
+				(#entity{offset = Offset, length = Length, type = Type},
+					{#entity{offset = LastOffset, length = LastLength, type = Type} = E, Acc})
+					when LastOffset + LastLength == Offset ->
+					{E#entity{length = Offset + Length - LastOffset}, Acc};
+				(#entity{} = E, {#entity{} = E2, Acc}) ->
+					{E, Acc ++ [E2]}
+			end, {[], []}, Entities))).
