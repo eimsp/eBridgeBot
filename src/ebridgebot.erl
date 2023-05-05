@@ -155,11 +155,11 @@ send(msg, {Module, Client}, BotId, From, To, Uid, Nick, Text, SubEls) when Modul
 	Module:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(From), to = jid:decode(To),
 		body = [#text{data = <<?NICK(Nick), Text/binary>>}], sub_els = [#origin_id{id = OriginId} | SubEls]})),
 	ebridgebot:write_link(BotId, OriginId, Uid);
-send(edit_msg, {Module, Client}, BotId, From, To, Uid, Nick, Text, _SubEls) when Module == escalus; Module == escalus_component ->
+send(edit_msg, {Module, Client}, BotId, From, To, Uid, Nick, Text, SubEls) when Module == escalus; Module == escalus_component ->
 	case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
 		[#xmpp_link{origin_id = ReplaceId, uid = Uid} | _] ->
 			Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(From), jid:decode(To),
-				<<?NICK(Nick), Text/binary>>, ReplaceId),
+				<<?NICK(Nick), Text/binary>>, ReplaceId, SubEls),
 			Module:send(Client, xmpp:encode(Pkt)),
 			ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
 		_ -> ok

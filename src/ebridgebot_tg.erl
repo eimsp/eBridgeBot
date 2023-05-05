@@ -64,7 +64,8 @@ handle_info({telegram_update, BotName, SendType,
 		#{<<"from">> := #{<<"username">> := QuotedUser},
 		  <<"message_id">> := Id,
 		  <<"text">> := QuotedText},
-	  <<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	  <<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State)
+		when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
