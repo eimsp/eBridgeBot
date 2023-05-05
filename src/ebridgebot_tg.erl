@@ -76,7 +76,7 @@ handle_info({telegram_update, BotName, SendType,
 			SubEls =
 				case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
 					[#xmpp_link{origin_id = OriginId} | _] ->
-						NickSize = byte_size(?NICK(Nick)),
+						NickSize = byte_size(<<?NICK(Nick)>>),
 						[#reply{id = OriginId, to = jid:replace_resource(jid:decode(MucJid), Nick)},
 							#fallback{for = ?NS_REPLY, body = [#fb_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}]}];
 					[] ->
