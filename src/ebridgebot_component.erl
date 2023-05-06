@@ -148,7 +148,8 @@ process_stanza(#message{id = Id} = Pkt, Client, #{} = State) ->
 			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
 			_ -> Pkt
 		end,
-	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt2, State, Client], ?MODULE, process_stanza))();
+	(ebridgebot:tag_decorator([#ps_event{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt2, State, Client], ?MODULE, process_stanza))(),
+	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
@@ -169,6 +170,14 @@ process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{b
 		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
+process_stanza(#reply{id = ReplyToId}, [Pkt, #{bot_id := BotId} = State | TState]) -> %% reply message from xmpp groupchat
+	?dbg("reply: ~p", [Pkt]),
+	NewState =
+		case ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) of
+			[#xmpp_link{uid = Uid} | _] -> State#{reply_to => Uid};
+			_ -> State
+		end,
+	(ebridgebot:tag_decorator([#replace{}, #origin_id{}], [Pkt, NewState | TState], ?MODULE, process_stanza))();
 process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
 	#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
