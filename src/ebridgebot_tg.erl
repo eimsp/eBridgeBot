@@ -145,13 +145,13 @@ handle_info(Info, _Client, State) ->
 -spec send_message(#{bot_name => atom(), chat_id => integer(), text => binary(), usernick => binary(), format => #{} | #{usernick => atom() | binary()}}) ->
 	{ok, #tg_id{}} | {error, atom(), term()}.
 send_message(#{bot_name := BotName, chat_id := ChatId} = State) ->
-	Msg = msg_format(State),
+	Msg = msg_reply(msg_format(State), State),
 	format(pe4kin:send_message(BotName, Msg#{chat_id => ChatId})).
 
 -spec edit_message(#{bot_name => atom(), uid => #tg_id{}, text => binary(), usernick => binary(), format => #{} | #{usernick => atom() | binary()}}) ->
 	{ok, #tg_id{}} | {error, atom(), term()}.
 edit_message(#{bot_name := BotName, uid := #tg_id{chat_id = ChatId, id = Id} = TgId} = State) ->
-	Msg = msg_format(State),
+	Msg = msg_reply(msg_format(State), State),
 	case pe4kin:edit_message(BotName, Msg#{chat_id => ChatId, message_id => Id}) of
 		{ok, _} -> {ok, TgId};
 		Err -> ?err("ERROR: edit_message: ~p", [Err]), Err
@@ -210,3 +210,8 @@ msg_format(#{text := Text, usernick := Nick, format := Format}) ->
 				{Offset + Len, case Format of #{Key := Type} -> [#{offset => Offset, length => Len, type => Type} | Acc]; _ -> Acc end}
 			end, {0, []}, [{usernick, Nick2 = <<?NICK(Nick)>>}, {text, Text}]),
 	#{entities => Es, text => <<Nick2/binary, Text/binary>>}.
+
+msg_reply(#{} = Msg, #{chat_id := ChatId, reply_to := #tg_id{chat_id = ChatId, id = ReplyToId}}) ->
+	Msg#{reply_to_message_id => ReplyToId};
+msg_reply(Msg, _State) ->
+	Msg.
