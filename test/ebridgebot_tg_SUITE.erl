@@ -381,13 +381,21 @@ reply_story(Config) ->
 			Text2 = binary:replace(<<?NICK(AliceNick), AliceMsg/binary>>, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 			OriginalText = <<$>, BotNick/binary, "\n>", Text2/binary>>,
 			ct:comment(OriginalText),
-
 			AliceReplyPkt = (xmpp:decode(Pkt))#message{body = [#text{data = ReplyMsg}],
 				sub_els = [#origin_id{id = ReplyToId = ebridgebot:gen_uuid()}, #reply{id = OriginId, to = jid:decode(RoomJid)}]},
 			escalus:send(Alice, xmpp:encode(AliceReplyPkt)),
 			#reply{} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
 			[#xmpp_link{origin_id = ReplyToId, uid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) end, 1),
+
+			ReplyEditMsg = <<"Hi, Alice! (edited)">>,
+			AliceReplyEditPkt = AliceReplyPkt#message{body = [#text{data = ReplyEditMsg}],
+				sub_els = [#origin_id{id = ReplyToId2 = ebridgebot:gen_uuid()}, #reply{id = OriginId, to = jid:decode(RoomJid)}, #replace{id = ReplyToId}]},
+
+			escalus:send(Alice, xmpp:encode(AliceReplyEditPkt)),
+			#reply{} = xmpp:get_subtag(#message{body = [#text{data = ReplyEditMsg}]} = xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
+			[#xmpp_link{origin_id = ReplyToId2, uid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId2, #xmpp_link.origin_id) end, 1),
 			ok
 		end).
 
