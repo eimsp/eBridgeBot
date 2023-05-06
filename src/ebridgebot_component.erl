@@ -178,16 +178,14 @@ process_stanza(#reply{id = ReplyToId}, [Pkt, #{bot_id := BotId} = State | TState
 			_ -> State
 		end,
 	(ebridgebot:tag_decorator([#replace{}, #origin_id{}], [Pkt, NewState | TState], ?MODULE, process_stanza))();
-process_stanza(#bot{}, [Pkt, #{format := Format} = State | TState]) -> %% bot message from xmpp groupchat
+process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | TState]) -> %% bot message from xmpp groupchat
+	?dbg("bot format: ~p", [Pkt]),
+	(ebridgebot:tag_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
+		[Pkt, State#{format => Format#{text => Type}, usernick => <<>>} | TState], ?MODULE, process_stanza))();
+process_stanza(#bot{}, [Pkt | _TState] = S) -> %% bot message from xmpp groupchat
 	?dbg("bot: ~p", [Pkt]),
-	NewState =
-		case Format of
-			#{system := Type} ->
-				State#{format => Format#{text => Type}, usernick => <<>>};
-			_ -> State
-		end,
-	(ebridgebot:tag_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, NewState | TState], ?MODULE, process_stanza))();
-process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
+	(ebridgebot:tag_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], S, ?MODULE, process_stanza))();
+process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, body = [#text{data = Text}]} = Pkt,
 		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
 	Module:edit_message(State#{uid => Uid, text => Text}),
