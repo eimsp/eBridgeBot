@@ -375,6 +375,7 @@ reply_story(Config) ->
 			TgReplyMsg = tg_message(ChatId, MessageId + 1, AliceNick, ReplyMsg, TgReply),
 			Pid ! {pe4kin_update, BotName, TgReplyMsg}, %% emulate sending reply message from Telegram
 
+			State = ebridgebot_component:state(Pid),
 			#reply{id = OriginId} = xmpp:get_subtag(ReplyPkt = #message{body = [#text{data = ReplyText}]} = xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
 			#fallback{body = [#fb_body{start = Start, 'end' = End}]} = xmpp:get_subtag(ReplyPkt, #fallback{}),
 			OriginalText = binary:part(ReplyText, Start, End - Start),
@@ -396,6 +397,7 @@ reply_story(Config) ->
 			#reply{} = xmpp:get_subtag(#message{body = [#text{data = ReplyEditMsg}]} = xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
 			[#xmpp_link{origin_id = ReplyToId2, uid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId2, #xmpp_link.origin_id) end, 1),
+			State = ebridgebot_component:state(Pid), %% same state
 			ok
 		end).
 
