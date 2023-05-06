@@ -148,7 +148,8 @@ process_stanza(#message{id = Id, from = #jid{resource = Nick}} = Pkt, Client, #{
 			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
 			_ -> Pkt
 		end,
-	(ebridgebot:tag_decorator([#ps_event{}, #bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt2, State#{usernick => Nick}, Client], ?MODULE, process_stanza))(),
+	stanza_decorator([#ps_event{}, #entities{}, #bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}],
+		[Pkt2, State#{usernick => Nick, entities => []}, Client]),
 	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
@@ -174,17 +175,22 @@ process_stanza(#reply{id = ReplyToId}, [Pkt, #{bot_id := BotId} = State | TState
 	?dbg("reply: ~p", [Pkt]),
 	NewState =
 		case ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) of
-			[#xmpp_link{uid = Uid} | _] -> State#{reply_to => Uid};
+			[#xmpp_link{uid = Uid} | _] -> State#{reply_to => Uid}; %% TODO implement fallback subtag
 			_ -> State
 		end,
-	(ebridgebot:tag_decorator([#replace{}, #origin_id{}], [Pkt, NewState | TState], ?MODULE, process_stanza))();
-process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | TState]) -> %% bot message from xmpp groupchat
+	stanza_decorator([#replace{}, #origin_id{}], [Pkt, NewState | TState]);
+process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | TState]) -> %% bot message format from xmpp groupchat
 	?dbg("bot format: ~p", [Pkt]),
-	(ebridgebot:tag_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
-		[Pkt, State#{format => Format#{text => Type}, usernick => <<>>} | TState], ?MODULE, process_stanza))();
+	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
+		[Pkt, State#{format => Format#{text => Type}, usernick => <<>>} | TState]);
 process_stanza(#bot{}, [Pkt | _TState] = S) -> %% bot message from xmpp groupchat
 	?dbg("bot: ~p", [Pkt]),
-	(ebridgebot:tag_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], S, ?MODULE, process_stanza))();
+	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], S);
+process_stanza(#entities{items = Entities}, [Pkt, State | TState]) -> %% entities from xmpp groupchat
+	?dbg("entities: ~p", [Pkt]),
+	NewState = State#{entities => [#{type => T, offset => Offset, length => Length}
+		|| #entity{type = T, offset = Offset, length = Length} <- ebridgebot:merge_entities(Entities)]},
+	stanza_decorator([#bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, NewState | TState]);
 process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, body = [#text{data = Text}]} = Pkt,
 		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
@@ -221,22 +227,15 @@ process_stanza(_, [#message{} = Pkt | _] = StateList) ->
 	process_stanza(StateList).
 
 process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint, format := Format} = State | _]) ->
+	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("send to third party client: ~p", [Pkt]),
-	{Fun, TmpState} =
+	{Fun, TmpState2} =
 		case catch binary:match(Text, [UploadEndpoint]) of
 			Found when is_binary(UploadEndpoint), Found /= nomatch -> %% TODO if endpoint path has port then tg does not allow upload
 				{send_data, State#{mime => hd(mimetypes:filename(Text)), file_uri => Text, caption => <<Nick/binary, ":">>}};
 			_ ->
 				{send_message, State#{text => Text}}
-		end,
-	TmpState2 =
-		case xmpp:get_subtag(Pkt, #entities{}) of
-			#entities{items = Es} ->
-				TmpState#{entities => [#{type => T, offset => Offset, length => Length}
-					|| #entity{type = T, offset = Offset, length = Length} <- ebridgebot:merge_entities(Es)]};
-			_ -> TmpState#{entities => []}
 		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
 	[case Module:Fun(TmpState2#{chat_id => ChatId}) of
@@ -284,3 +283,6 @@ filter_pred(#{component := Component, nick := ComponentNick}) -> %% filter echo 
 			end;
 		(_) -> true
 	end.
+
+stanza_decorator(Tags, S) ->
+	(ebridgebot:tag_decorator(Tags, S, ?MODULE, process_stanza))().
