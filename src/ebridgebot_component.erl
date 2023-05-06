@@ -142,13 +142,13 @@ process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{serve
 		_ ->
 			{ok, State}
 	end;
-process_stanza(#message{id = Id} = Pkt, Client, #{} = State) ->
+process_stanza(#message{id = Id, from = #jid{resource = Nick}} = Pkt, Client, #{} = State) ->
 	Pkt2 =
 		case xmpp:get_subtag(Pkt, #origin_id{}) of
 			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
 			_ -> Pkt
 		end,
-	(ebridgebot:tag_decorator([#ps_event{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt2, State, Client], ?MODULE, process_stanza))(),
+	(ebridgebot:tag_decorator([#ps_event{}, #bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt2, State#{usernick => Nick}, Client], ?MODULE, process_stanza))(),
 	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
@@ -178,12 +178,20 @@ process_stanza(#reply{id = ReplyToId}, [Pkt, #{bot_id := BotId} = State | TState
 			_ -> State
 		end,
 	(ebridgebot:tag_decorator([#replace{}, #origin_id{}], [Pkt, NewState | TState], ?MODULE, process_stanza))();
+process_stanza(#bot{}, [Pkt, #{format := Format} = State | TState]) -> %% bot message from xmpp groupchat
+	?dbg("bot: ~p", [Pkt]),
+	NewState =
+		case Format of
+			#{system := Type} ->
+				State#{format => Format#{text => Type}, usernick => <<>>};
+			_ -> State
+		end,
+	(ebridgebot:tag_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, NewState | TState], ?MODULE, process_stanza))();
 process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
+		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
-	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-	Module:edit_message(State#{uid => Uid, text => Text, usernick => Nick}),
-	ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
+	Module:edit_message(State#{uid => Uid, text => Text}),
+	ebridgebot:write_link(BotId, xmpp:get_subtag(Pkt, #origin_id{}), Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
 	{ok, State};
 process_stanza(#apply_to{sub_els = [#moderated{sub_els = [#retract{} | _]}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
 	?dbg("moderator retract: ~p", [Pkt]),
@@ -225,21 +233,15 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, 
 			_ ->
 				{send_message, State#{text => Text}}
 		end,
-	{TmpState2, Nick2} =
-		case {xmpp:get_subtag(Pkt, #bot{}), Format} of
-			{#bot{nick = _BotNick, type = system}, #{system := Type}} -> %% if bot message
-				{TmpState#{format => Format#{text => Type}}, <<>>};
-			_ -> {TmpState, Nick}
-		end,
-	TmpState3 =
+	TmpState2 =
 		case xmpp:get_subtag(Pkt, #entities{}) of
 			#entities{items = Es} ->
-				TmpState2#{entities => [#{type => T, offset => Offset, length => Length}
+				TmpState#{entities => [#{type => T, offset => Offset, length => Length}
 					|| #entity{type = T, offset = Offset, length = Length} <- ebridgebot:merge_entities(Es)]};
-			_ -> TmpState2#{entities => []}
+			_ -> TmpState#{entities => []}
 		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
-	[case Module:Fun(TmpState3#{chat_id => ChatId, usernick => Nick2}) of
+	[case Module:Fun(TmpState2#{chat_id => ChatId}) of
 		 {ok, Uid} ->
 			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err
