@@ -15,7 +15,7 @@ start_link(Args) ->
 
 init(Args) ->
 	?dbg("~p: init with args: ~p", [?MODULE, Args]),
-	DefaultState = #{rooms => [], upload_host => <<"upload.localhost">>, upload_endpoint => undefined, format => #{}},
+	DefaultState = #{rooms => [], upload_host => <<"upload.localhost">>, format => #{}},
 	State = #{rooms := Rooms, bot_id := BotId, module := Module} = maps:merge(DefaultState, Args),
 	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = string:lowercase(MucJid), password = case MucMap of #{password := P} -> P; _-> undefined end}
 		|| {TgId, #{jid := MucJid} = MucMap} <- Rooms],
@@ -237,8 +237,7 @@ process_stanza(_, [#message{} = Pkt | _] = StateList) ->
 	?dbg("msg without origin id: ~p", [Pkt]),
 	process_stanza(StateList).
 
-process_stanza([#message{type = groupchat, from = #jid{resource = Nick}} = Pkt,
-	#{upload_endpoint := UploadEndpoint, text := Text} = State | TState]) when is_binary(UploadEndpoint) ->
+process_stanza([#message{type = groupchat, from = #jid{resource = Nick}} = Pkt,	#{upload_endpoint := UploadEndpoint, text := Text} = State | TState]) ->
 	?dbg("upload to third party client: ~p", [Pkt]),
 	NewState =
 		case binary:match(Text, [UploadEndpoint]) of
@@ -249,9 +248,9 @@ process_stanza([#message{type = groupchat, from = #jid{resource = Nick}} = Pkt,
 						file_uri => Text,
 						caption => <<Nick/binary, ":">>}
 		end,
-	process_stanza([Pkt, NewState#{upload_endpoint => undefined} | TState]);
+	process_stanza([Pkt, maps:remove(upload_endpoint, NewState) | TState]);
 process_stanza([#message{type = groupchat, from = From} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module, send_fun := SendFun, text := _, upload_endpoint := undefined} = State | _]) ->
+	#{bot_id := BotId, rooms := Rooms, module := Module, send_fun := SendFun, text := _} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("send to third party client: ~p", [Pkt]),
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
