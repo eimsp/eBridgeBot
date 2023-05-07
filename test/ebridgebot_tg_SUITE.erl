@@ -78,8 +78,8 @@ init_per_testcase(CaseName, Config) ->
 
 
 end_per_testcase(upload_story, Config) ->
-%%	catch meck:unload(ebridgebot_tg),
-%%	catch meck:unload(pe4kin),
+	catch meck:unload(ebridgebot_tg),
+	catch meck:unload(pe4kin),
 	case application:get_application(ejabberd) of
 		{ok, _} ->
 			Host = hd(ejabberd_option:hosts()),

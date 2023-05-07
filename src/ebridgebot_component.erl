@@ -149,7 +149,7 @@ process_stanza(#message{id = Id, from = #jid{resource = Nick}} = Pkt, Client, #{
 			_ -> Pkt
 		end,
 	stanza_decorator([#ps_event{}, #entities{}, #bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}],
-		[Pkt2, State#{usernick => Nick, entities => []}, Client]),
+		[Pkt2, State#{usernick => Nick, entities => [], send_fun => send_message}, Client]),
 	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
@@ -166,12 +166,12 @@ process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #{} = State | _]) ->
 	?dbg("handle event message: ~p", [Event]),
 	%% TODO not implemented
 	{ok, State};
-process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{bot_id := BotId} = State | _]) ->
+process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat, body = [#text{data = Text}]} = Pkt, #{bot_id := BotId} = State | TState]) ->
 	case ebridgebot:upd_links(BotId, OriginId, xmpp:get_subtag(Pkt, #mam_archived{})) of
 		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
-		[] -> process_stanza([Pkt, State])
+		[] -> process_stanza([Pkt, State#{text => Text} | TState])
 	end;
-process_stanza(#reply{id = ReplyToId}, [Pkt, #{bot_id := BotId} = State | TState]) -> %% reply message from xmpp groupchat
+process_stanza(#reply{id = ReplyToId}, [Pkt = #message{body = [#text{data = Text}]}, #{bot_id := BotId} = State | TState]) -> %% reply message from xmpp groupchat
 	?dbg("reply: ~p", [Pkt]),
 	{NewState, Tags} =
 		case ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) of
@@ -179,17 +179,16 @@ process_stanza(#reply{id = ReplyToId}, [Pkt, #{bot_id := BotId} = State | TState
 				{State#{reply_to => Uid}, [#fallback{}]};
 			_ -> {State, []}
 		end,
-	stanza_decorator(Tags ++ [#replace{}, #origin_id{}], [Pkt, NewState | TState]);
+	stanza_decorator(Tags ++ [#replace{}, #origin_id{}], [Pkt, NewState#{text => Text} | TState]);
 process_stanza(#fallback{body = [#fb_body{start = Start, 'end' = End}]},
 	[Pkt = #message{body = [#text{data = Text}]}, #{reply_to := _Uid} = State | TState]) -> %% fallback reply message from xmpp groupchat
 	?dbg("fallback: ~p", [Pkt]),
-	Pkt2 = case xmpp:get_subtag(Pkt, #fallback{}) of
-		       #fallback{body = [#fb_body{start = Start, 'end' = End}]} ->
-			       Text2 = iolist_to_binary([binary:part(Text, Pos, Len) || {Pos, Len} <- [{0, Start}, {End, byte_size(Text) - End}]]),
-			       Pkt#message{body = [#text{data = Text2}]};
-		       _ -> Pkt
-	       end,
-	stanza_decorator([#replace{}, #origin_id{}], [Pkt2, State | TState]);
+	Text2 = case xmpp:get_subtag(Pkt, #fallback{}) of
+		        #fallback{body = [#fb_body{start = Start, 'end' = End}]} ->
+			        iolist_to_binary([binary:part(Text, Pos, Len) || {Pos, Len} <- [{0, Start}, {End, byte_size(Text) - End}]]);
+		        _ -> Text
+	        end,
+	stanza_decorator([#replace{}, #origin_id{}], [Pkt#message{body = [#text{data = Text2}]}, State#{text => Text2} | TState]);
 process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | TState]) -> %% bot message format from xmpp groupchat
 	?dbg("bot format: ~p", [Pkt]),
 	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
@@ -218,7 +217,7 @@ process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = g
 	Table = ebridgebot:bot_table(BotId),
 	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- ebridgebot:index_read(BotId, Uid, #xmpp_link.uid)],
 	{ok, State};
-process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | _] = Args)
+process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | TState] = Args)
 	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edited or moderated message from xmpp groupchat
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
 	MucFrom = jid:encode(jid:remove_resource(From)),
@@ -229,7 +228,8 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 		 [#xmpp_link{uid = Uid} | _] ->
 			 process_stanza(Tag, [{uid, Uid} | Args]);
 		 [] when is_record(Tag, replace) ->
-			 process_stanza(xmpp:get_subtag(Pkt, #origin_id{}), Args); %% send new message if the replaced message does not exist
+			 #message{body = [#text{data = Text}]} = Pkt,
+			 process_stanza(xmpp:get_subtag(Pkt, #origin_id{}), [Pkt, State#{text => Text} | TState]); %% send new message if the replaced message does not exist
 		 [] -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
@@ -237,19 +237,25 @@ process_stanza(_, [#message{} = Pkt | _] = StateList) ->
 	?dbg("msg without origin id: ~p", [Pkt]),
 	process_stanza(StateList).
 
-process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint} = State | _]) ->
+process_stanza([#message{type = groupchat, from = #jid{resource = Nick}} = Pkt,
+	#{upload_endpoint := UploadEndpoint, text := Text} = State | TState]) when is_binary(UploadEndpoint) ->
+	?dbg("upload to third party client: ~p", [Pkt]),
+	NewState =
+		case binary:match(Text, [UploadEndpoint]) of
+			nomatch -> State;
+			_ -> %% TODO if endpoint path has port then tg does not allow upload
+				State#{send_fun => send_data,
+						mime => hd(mimetypes:filename(Text)),
+						file_uri => Text,
+						caption => <<Nick/binary, ":">>}
+		end,
+	process_stanza([Pkt, NewState#{upload_endpoint => undefined} | TState]);
+process_stanza([#message{type = groupchat, from = From} = Pkt,
+	#{bot_id := BotId, rooms := Rooms, module := Module, send_fun := SendFun, text := _, upload_endpoint := undefined} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("send to third party client: ~p", [Pkt]),
-	{Fun, TmpState2} =
-		case catch binary:match(Text, [UploadEndpoint]) of
-			Found when is_binary(UploadEndpoint), Found /= nomatch -> %% TODO if endpoint path has port then tg does not allow upload
-				{send_data, State#{mime => hd(mimetypes:filename(Text)), file_uri => Text, caption => <<Nick/binary, ":">>}};
-			_ ->
-				{send_message, State#{text => Text}}
-		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
-	[case Module:Fun(TmpState2#{chat_id => ChatId}) of
+	[case Module:SendFun(State#{chat_id => ChatId}) of
 		 {ok, Uid} ->
 			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err
