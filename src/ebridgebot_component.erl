@@ -194,9 +194,9 @@ process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | T
 	?dbg("bot format: ~p", [Pkt]),
 	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
 		[Pkt, State#{format => Format#{text => Type}, usernick => <<>>} | TState]);
-process_stanza(#bot{}, [Pkt | _TState] = S) -> %% bot message from xmpp groupchat
-	?dbg("bot: ~p", [Pkt]),
-	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], S);
+process_stanza(#bot{}, State) -> %% bot message from xmpp groupchat
+	?dbg("bot: ~p", [State]),
+	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], State);
 process_stanza(#entities{items = Entities}, [Pkt, State | TState]) -> %% entities from xmpp groupchat
 	?dbg("entities: ~p", [Pkt]),
 	NewState = State#{entities => [#{type => T, offset => Offset, length => Length}

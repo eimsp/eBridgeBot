@@ -44,21 +44,14 @@ init_per_testcase(upload_story, Config) ->
 init_per_testcase(CaseName, Config) ->
 	meck:new(ebridgebot_component, [no_link, passthrough]),
 	meck:expect(ebridgebot_component, process_stanza, send_stanza_fun(self())),
-	[BotArgs = #{bot_id := _BotId} | _] = escalus_ct:get_config(tg_bots),
+	[BotArgs | _] = escalus_ct:get_config(tg_bots),
 	Args = BotArgs#{component => escalus_ct:get_config(ejabberd_service),
-		host => escalus_ct:get_config(ejabberd_addr),
-		upload_host => escalus_ct:get_config(upload_host),
-		password => escalus_ct:get_config(ejabberd_service_password),
-		port => escalus_ct:get_config(ejabberd_service_port),
-		rooms => []
-	},
+					host => escalus_ct:get_config(ejabberd_addr),
+					upload_host => escalus_ct:get_config(upload_host),
+					password => escalus_ct:get_config(ejabberd_service_password),
+					port => escalus_ct:get_config(ejabberd_service_port),
+					rooms => []},
 
-%%	Args = [{component, escalus_ct:get_config(ejabberd_service)},
-%%		{host, escalus_ct:get_config(ejabberd_addr)},
-%%		{upload_host, escalus_ct:get_config(upload_host)},
-%%		{password, escalus_ct:get_config(ejabberd_service_password)},
-%%		{port, escalus_ct:get_config(ejabberd_service_port)},
-%%		{linked_rooms, []}] ++ BotArgs,
 	{ok, Pid} = wait_for_result(fun() -> ebridgebot_component:start(Args) end,
 					fun({ok, _}) -> true; (_) -> false end),
 	[_Host, MucHost, Rooms] =
@@ -82,12 +75,11 @@ init_per_testcase(CaseName, Config) ->
 		 ok
 	 end || {_, Opts} <- Rooms],
 	[{component_pid, Pid} | maps:to_list(Args) ++ escalus:init_per_testcase(CaseName, Config)].
-%%	[{component_pid, Pid}, {bot_id, BotId} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
 
 end_per_testcase(upload_story, Config) ->
-	catch meck:unload(ebridgebot_tg),
-	catch meck:unload(pe4kin),
+%%	catch meck:unload(ebridgebot_tg),
+%%	catch meck:unload(pe4kin),
 	case application:get_application(ejabberd) of
 		{ok, _} ->
 			Host = hd(ejabberd_option:hosts()),
@@ -101,7 +93,7 @@ end_per_testcase(CaseName, Config) ->
 	catch destroy_room(CaseName, Config),
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
 	mnesia:delete_table(ebridgebot:bot_table(get_property(bot_id, Config))),
-	catch meck:unload(ebridgebot_component),
+	catch meck:unload(),
 	escalus:end_per_testcase(CaseName, Config).
 
 destroy_room(CaseName, Config) ->
@@ -109,19 +101,16 @@ destroy_room(CaseName, Config) ->
 	[Rooms, MucHost] = [escalus_ct:get_config(K) || K <- [ebridgebot_rooms, muc_host]],
 	[begin
 		 RoomNode = get_property(name, Opts),
-		 Iq = #iq{type = set,
-			 from = jid:decode(Component), to = jid:make(RoomNode, MucHost),
-			 sub_els = [#muc_owner{destroy = #muc_destroy{}}]},
+		 Iq = #iq{type = set, from = jid:decode(Component), to = jid:make(RoomNode, MucHost), sub_els = [#muc_owner{destroy = #muc_destroy{}}]},
 		 escalus_component:send(Pid, xmpp:encode(Iq)),
 		 case CaseName of
 			 subscribe_muc_story -> ok;
-			 _ ->
-				 receive
-					 destroyed -> ct:print("room destroyed")
-				 after 5000 ->
+			 _ -> receive
+				      destroyed -> ct:comment("room destroyed")
+			      after 5000 ->
 					 ct:comment("room destroy timeout"),
 					 {error, timeout}
-				 end
+			      end
 		 end
 	 end || {_, Opts} <- Rooms].
 
@@ -404,17 +393,27 @@ reply_story(Config) ->
 			%% send fallback reply packet
 			AliceReplyMsg = binary:replace(AliceMsg, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 			RepliedAliceText = <<$>, AliceNick/binary, "\n>", AliceReplyMsg/binary>>,
-			AliceFullReplyMsg = <<RepliedAliceText/binary, $\n, ReplyMsg/binary>>,
+			AliceFullReplyMsg = <<RepliedAliceText/binary, $\n, ReplyMsg/binary>>, %% message with fallback reply
 			AliceReplyPkt2 = DecodedPkt#message{body = [#text{data = AliceFullReplyMsg}],
 				sub_els = [#origin_id{id = ReplyToId3 = ebridgebot:gen_uuid()},
 					#reply{id = OriginId, to = jid:decode(RoomJid)},
 					#fallback{body = [#fb_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}]}]},
-
-			escalus:send(Alice, xmpp:encode(AliceReplyPkt2)), %% TODO meck test to check reply msg for telegram
-			#fallback{} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #fallback{}),
+			meck:expect(ebridgebot_tg, send_message, send_message_fun(self())),
+			escalus:send(Alice, xmpp:encode(AliceReplyPkt2)),
+			#fallback{} = xmpp:get_subtag(ReplyFallbackPkt = xmpp:decode(escalus:wait_for_stanza(Alice)), #fallback{}),
+			#reply{} = xmpp:get_subtag(ReplyFallbackPkt, #reply{}),
 			[#xmpp_link{origin_id = ReplyToId3, uid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId3, #xmpp_link.origin_id) end, 1),
-			ok
+			receive
+				#{text := ReplyMsg} ->
+					ct:comment("reply: ~s", [ReplyMsg]);
+				#{text := ReplyWrongText} ->
+					ct:comment("reply wrong: ~s", [ReplyWrongText]),
+					?assert(false)
+			after 2000 ->
+				ct:comment("reply timeout"),
+				?assert(false)
+			end
 		end).
 
 %% tg test API
@@ -510,4 +509,12 @@ send_stanza_fun(Pid) ->
 				Res;
 			_ -> meck:passthrough([Stanza, Client, State])
 		end
+	end.
+
+send_message_fun(Pid) ->
+	fun(#{reply_to := _} = State) ->
+			Res = meck:passthrough([State]),
+			Pid ! State, Res;
+		(State) ->
+			meck:passthrough([State])
 	end.
