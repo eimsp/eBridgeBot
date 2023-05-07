@@ -171,14 +171,23 @@ process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{b
 		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
 		[] -> process_stanza([Pkt, State])
 	end;
-process_stanza(#reply{id = ReplyToId}, [Pkt, #{bot_id := BotId} = State | TState]) -> %% reply message from xmpp groupchat
+process_stanza(#reply{id = ReplyToId}, [Pkt = #message{body = [#text{data = Text}]}, #{bot_id := BotId} = State | TState]) -> %% reply message from xmpp groupchat
 	?dbg("reply: ~p", [Pkt]),
-	NewState =
+	{NewState, NewPkt} =
 		case ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) of
-			[#xmpp_link{uid = Uid} | _] -> State#{reply_to => Uid}; %% TODO implement fallback subtag
-			_ -> State
+			[#xmpp_link{uid = Uid} | _] ->
+				Pkt2 =
+					case xmpp:get_subtag(Pkt, #fallback{}) of
+						#fallback{body = [#fb_body{start = Start, 'end' = End}]} ->
+							Text2 = iolist_to_binary([binary:part(Text, Pos, Len) || {Pos, Len} <- [{0, Start}, {End, byte_size(Text) - End}]]),
+							Pkt#message{body = [#text{data = Text2}]};
+						_ ->
+							Pkt
+					end,
+				{State#{reply_to => Uid}, Pkt2};
+			_ -> {State, Pkt}
 		end,
-	stanza_decorator([#replace{}, #origin_id{}], [Pkt, NewState | TState]);
+	stanza_decorator([#replace{}, #origin_id{}], [NewPkt, NewState | TState]);
 process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | TState]) -> %% bot message format from xmpp groupchat
 	?dbg("bot format: ~p", [Pkt]),
 	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
