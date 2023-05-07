@@ -376,13 +376,15 @@ reply_story(Config) ->
 			Pid ! {pe4kin_update, BotName, TgReplyMsg}, %% emulate sending reply message from Telegram
 
 			State = ebridgebot_component:state(Pid),
-			#reply{id = OriginId} = xmpp:get_subtag(ReplyPkt = #message{body = [#text{data = ReplyText}]} = xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
+			#reply{id = OriginId} = xmpp:get_subtag(ReplyPkt = #message{body = [#text{data = ReplyText}]} =
+				xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
 			#fallback{body = [#fb_body{start = Start, 'end' = End}]} = xmpp:get_subtag(ReplyPkt, #fallback{}),
 			OriginalText = binary:part(ReplyText, Start, End - Start),
-			Text2 = binary:replace(<<?NICK(AliceNick), AliceMsg/binary>>, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
-			OriginalText = <<$>, BotNick/binary, "\n>", Text2/binary>>,
+			AliceMsg2 = binary:replace(<<?NICK(AliceNick), AliceMsg/binary>>, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
+			OriginalText = <<$>, BotNick/binary, "\n>", AliceMsg2/binary>>,
 			ct:comment(OriginalText),
-			AliceReplyPkt = (xmpp:decode(Pkt))#message{body = [#text{data = ReplyMsg}],
+
+			AliceReplyPkt = (DecodedPkt = xmpp:decode(Pkt))#message{body = [#text{data = ReplyMsg}],
 				sub_els = [#origin_id{id = ReplyToId = ebridgebot:gen_uuid()}, #reply{id = OriginId, to = jid:decode(RoomJid)}]},
 			escalus:send(Alice, xmpp:encode(AliceReplyPkt)),
 			#reply{} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
@@ -398,6 +400,20 @@ reply_story(Config) ->
 			[#xmpp_link{origin_id = ReplyToId2, uid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId2, #xmpp_link.origin_id) end, 1),
 			State = ebridgebot_component:state(Pid), %% same state
+
+			%% send fallback reply packet
+			AliceReplyMsg = binary:replace(AliceMsg, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
+			RepliedAliceText = <<$>, AliceNick/binary, "\n>", AliceReplyMsg/binary>>,
+			AliceFullReplyMsg = <<RepliedAliceText/binary, $\n, ReplyMsg/binary>>,
+			AliceReplyPkt2 = DecodedPkt#message{body = [#text{data = AliceFullReplyMsg}],
+				sub_els = [#origin_id{id = ReplyToId3 = ebridgebot:gen_uuid()},
+					#reply{id = OriginId, to = jid:decode(RoomJid)},
+					#fallback{body = [#fb_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}]}]},
+
+			escalus:send(Alice, xmpp:encode(AliceReplyPkt2)), %% TODO meck test to check reply msg for telegram
+			#fallback{} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #fallback{}),
+			[#xmpp_link{origin_id = ReplyToId3, uid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId3, #xmpp_link.origin_id) end, 1),
 			ok
 		end).
 
