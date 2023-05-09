@@ -10,8 +10,7 @@
 -define(CLEARING_INTERVAL, 24). %% in hours
 -define(LIFE_SPAN, 48). %% in hours
 
--record(telegram_update, {send_type = msg                   :: msg | edit_msg,
-						  msg = []                          :: map(),
+-record(telegram_update, {msg = #{}                         :: map(),
 						  packet_fun = ebridgebot:pkt_fun() :: function()}).
 
 init(#{bot_name := BotName, token := Token} = Args) ->
@@ -126,9 +125,9 @@ handle_info(#telegram_update{msg = #{<<"sticker">> := Sticker} = TgMsg} = TgUpd,
 	?dbg("telegram_update: sticker without emoji: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2#{<<"document">> => Sticker}}, Client, State);
-handle_info(#telegram_update{send_type = SendType, msg = TgMsg} = TgUpd, Client, State)
+handle_info(#telegram_update{msg = TgMsg} = TgUpd, Client, State)
 	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg); is_map_key(<<"voice">>, TgMsg) ->
-	?dbg("telegram_update: photo | video | audio | voice, ~p, ~p", [SendType, TgMsg]),
+	?dbg("telegram_update: photo | video | audio | voice, ~p", [TgMsg]),
 	ReplaceFun =
 		fun ReplaceFun([], Map) -> Map;
 			ReplaceFun([Key | T], Map) ->
@@ -141,8 +140,8 @@ handle_info(#telegram_update{send_type = SendType, msg = TgMsg} = TgUpd, Client,
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2}, Client, State);
-handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := CurChatId}, <<"from">> := #{<<"username">> := TgUserName}, <<"message_id">> := Id, <<"text">> := Text}, packet_fun = PktFun} = TgMsg, Client,
-	#{bot_id := BotId, rooms := Rooms} = State) ->
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := CurChatId}, <<"message_id">> := Id, <<"text">> := Text}, packet_fun = PktFun} = TgMsg,
+			Client,	#{bot_id := BotId, rooms := Rooms} = State) ->
 	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
