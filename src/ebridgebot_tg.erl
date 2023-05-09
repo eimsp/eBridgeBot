@@ -63,7 +63,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State) ->
 	?dbg("telegram_update: upload: ~p", [TgMsg]),
 	Text = case maps:find(<<"caption">>, TgMsg) of {ok, V} -> <<V/binary, $\n>>; _ -> <<>> end,
-	case ebridgebot:to_rooms(ChatId, Rooms, fun(_, MucJid) -> MucJid end) of
+	case ebridgebot:to_rooms(ChatId, Rooms, fun(MucJid) -> MucJid end) of
 		[] -> {ok, State};
 		MucJids ->
 			{ok, #{<<"file_path">> := FilePath, <<"file_size">> := FileSize}} = pe4kin:get_file(BotName, #{file_id => FileId}),
@@ -82,7 +82,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 						packet_fun = ebridgebot:pkt_fun(text, PktFun, Text)}}}}
 	end;
 handle_info(#telegram_update{packet_fun = PktFun,
-							msg = #{<<"chat">> := #{<<"id">> := CurChatId},
+							msg = #{<<"chat">> := #{<<"id">> := ChatId},
 								   <<"from">> := #{<<"username">> := TgUsername},
 								   <<"message_id">> := MessageId,
 								   <<"reply_to_message">> :=
@@ -97,9 +97,9 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	Text3 = <<RepliedText/binary, $\n, Text/binary>>,
 	PktFun2 = ebridgebot:pkt_fun(text, PktFun, Text3),
 	NickSize = byte_size(<<?NICK(TgUsername)>>),
-	Uid = #tg_id{chat_id = CurChatId, id = Id},
-	ebridgebot:to_rooms(CurChatId, Rooms,
-		fun(_ChatId, MucJid) ->
+	Uid = #tg_id{chat_id = ChatId, id = Id},
+	ebridgebot:to_rooms(ChatId, Rooms,
+		fun(MucJid) ->
 			PktFun3 =
 				case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
 					[#xmpp_link{origin_id = OriginId} | _] -> %% TODO solve many to many problem!
@@ -140,11 +140,11 @@ handle_info(#telegram_update{msg = TgMsg} = TgUpd, Client, State)
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2}, Client, State);
-handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := CurChatId}, <<"message_id">> := Id, <<"text">> := Text}, packet_fun = PktFun} = TgMsg,
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := Id, <<"text">> := Text}, packet_fun = PktFun} = TgMsg,
 			Client,	#{bot_id := BotId, rooms := Rooms} = State) ->
 	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
-	ebridgebot:to_rooms(CurChatId, Rooms,
-		fun(ChatId, MucJid) ->
+	ebridgebot:to_rooms(ChatId, Rooms,
+		fun(MucJid) ->
 			PktFun2 = ebridgebot:fold_pkt_fun([{text, Text}], PktFun),
 			ebridgebot:send_to(Client, PktFun2, MucJid, BotId, #tg_id{chat_id = ChatId, id = Id})
 		end),

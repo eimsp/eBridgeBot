@@ -140,7 +140,7 @@ index_read(BotId, Key, Attr) ->
 
 -spec to_rooms(integer() | binary(), list(#muc_state{}), function()) -> list(any()).
 to_rooms(CurChatId, Rooms, Fun) ->
-	[Fun(ChatId, MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
+	[Fun(MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
 
 merge_entities(Entities) ->
