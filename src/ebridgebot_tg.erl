@@ -38,7 +38,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 				ebridgebot:pkt_fun(tag, PktFun, #replace{id = ReplaceId});
 			_ -> PktFun
 		end,
-	handle_info(#telegram_update{send_type = edit_msg, packet_fun = NewPktFun,
+	handle_info(#telegram_update{packet_fun = NewPktFun,
 								 msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
 							msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName}} = TgMsg}},
@@ -83,32 +83,34 @@ handle_info(#telegram_update{packet_fun = PktFun,
 						packet_fun = ebridgebot:pkt_fun(text, PktFun, Text)}}}}
 	end;
 handle_info(#telegram_update{packet_fun = PktFun,
-	msg = #{<<"chat">> := #{<<"id">> := CurChatId},
-		   <<"from">> := #{<<"username">> := TgUsername},
-		   <<"reply_to_message">> :=
-				#{<<"from">> := #{<<"username">> := QuotedUser},
-				  <<"message_id">> := Id,
-				  <<"text">> := QuotedText},
-		   <<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, nick := Nick, rooms := Rooms} = State) ->
+							msg = #{<<"chat">> := #{<<"id">> := CurChatId},
+								   <<"from">> := #{<<"username">> := TgUsername},
+								   <<"message_id">> := MessageId,
+								   <<"reply_to_message">> :=
+										#{<<"from">> := #{<<"username">> := QuotedUser},
+										  <<"message_id">> := Id,
+										  <<"text">> := QuotedText},
+								   <<"text">> := Text} = TgMsg},
+	Client, #{bot_id := BotId, nick := Nick, rooms := Rooms} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
 	Text3 = <<RepliedText/binary, $\n, Text/binary>>,
 	PktFun2 = ebridgebot:pkt_fun(text, PktFun, Text3),
 	NickSize = byte_size(<<?NICK(TgUsername)>>),
+	Uid = #tg_id{chat_id = CurChatId, id = Id},
 	ebridgebot:to_rooms(CurChatId, Rooms,
-		fun(ChatId, MucJid) ->
-			Uid = #tg_id{chat_id = ChatId, id = Id},
+		fun(_ChatId, MucJid) ->
 			PktFun3 =
 				case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
-					[#xmpp_link{origin_id = OriginId} | _] ->
+					[#xmpp_link{origin_id = OriginId} | _] -> %% TODO solve many to many problem!
 						ebridgebot:fold_pkt_fun(
 							[{tag, #reply{id = OriginId, to = jid:replace_resource(jid:decode(MucJid), Nick)}},
 							{tag, #fallback{for = ?NS_REPLY, body = [#fb_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}]}}], PktFun2);
 					[] ->
 						PktFun2
 				end,
-			ebridgebot:send_to(Client, PktFun3, MucJid, BotId, Uid)
+			ebridgebot:send_to(Client, PktFun3, MucJid, BotId, Uid#tg_id{id = MessageId})
 		end),
 	{ok, State};
 handle_info(#telegram_update{msg = #{<<"forward_from">> := #{<<"username">> := QuotedUser}, <<"text">> := Text} = TgMsg} = TgUpd, Client, State) ->
