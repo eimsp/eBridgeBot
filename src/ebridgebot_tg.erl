@@ -11,7 +11,6 @@
 -define(LIFE_SPAN, 48). %% in hours
 
 -record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map(),
-	packet = #message{} :: #message{},
 	packet_fun = fun(_, To) -> #message{to = jid:decode(To)} end :: function()}).
 
 init(#{bot_name := BotName, token := Token} = Args) ->
@@ -55,7 +54,7 @@ handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMs
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
 	%% TODO not implemented
 	{ok, State};
-handle_info(#telegram_update{send_type = SendType, packet = Pkt,
+handle_info(#telegram_update{send_type = SendType, packet_fun = PktFun,
 								msg = #{<<"chat">> := #{<<"id">> := ChatId},
 									<<"document">> := #{<<"file_id">> := FileId},
 									<<"from">> := #{<<"username">> := TgUserName},
@@ -82,7 +81,7 @@ handle_info(#telegram_update{send_type = SendType, packet = Pkt,
 						muc_jids = MucJids,
 						uid = #tg_id{chat_id = ChatId, id = Id},
 						send_type = SendType,
-						packet = Pkt}}}}
+						packet_fun = PktFun}}}}
 	end;
 handle_info(#telegram_update{send_type = SendType,
 	msg = #{<<"chat">> := #{<<"id">> := CurChatId},
