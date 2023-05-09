@@ -63,7 +63,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State) ->
 	?dbg("telegram_update: upload: ~p", [TgMsg]),
 	Text = case maps:find(<<"caption">>, TgMsg) of {ok, V} -> <<V/binary, $\n>>; _ -> <<>> end,
-	case ebridgebot:to_rooms(ChatId, Rooms, fun(MucJid) -> MucJid end) of
+	case ebridgebot:to_rooms(ChatId, Rooms) of
 		[] -> {ok, State};
 		MucJids ->
 			{ok, #{<<"file_path">> := FilePath, <<"file_size">> := FileSize}} = pe4kin:get_file(BotName, #{file_id => FileId}),
