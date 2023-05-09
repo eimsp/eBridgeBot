@@ -26,7 +26,8 @@ init(#{bot_name := BotName, token := Token} = Args) ->
 	{ok, State}.
 
 handle_info(#telegram_update{packet = Pkt,
-				msg = #{<<"edited_message">> := #{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := MessageId} = TgMsg} = EditMsg},
+				msg = #{<<"edited_message">> :=
+							#{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := MessageId} = TgMsg} = EditMsg},
 	Client, #{bot_id := BotId} = State) ->
 	NewPkt =
 		case ebridgebot:index_read(BotId, #tg_id{chat_id = ChatId, id = MessageId}, #xmpp_link.uid) of
@@ -34,22 +35,25 @@ handle_info(#telegram_update{packet = Pkt,
 				Pkt#message{sub_els = [#replace{id = ReplaceId}]};
 			_ -> Pkt
 		end,
-	handle_info(#telegram_update{send_type = edit_msg, msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}, packet = NewPkt}, Client, State);
-handle_info(#telegram_update{packet = Pkt, msg = #{<<"message">> := TgMsg}}, Client, State) ->
+	handle_info(#telegram_update{send_type = edit_msg,
+								 msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}, packet = NewPkt}, Client, State);
+handle_info(#telegram_update{packet = Pkt, msg = #{<<"message">> := TgMsg}}, Client, #{component := ComponentJid} = State) ->
 	OriginId = ebridgebot:gen_uuid(),
-	handle_info(#telegram_update{msg = TgMsg, packet = xmpp:set_subtag(Pkt#message{id = OriginId}, #origin_id{id = OriginId})}, Client, State);
-handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client,
-	#{ignore_commands := true} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
-	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
-	handle_info(TgUpd#telegram_update{msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
-handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
-	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
-	{ok, State};
+	handle_info(#telegram_update{msg = TgMsg,
+								 packet = xmpp:set_subtag(Pkt#message{id = OriginId, from = jid:decode(ComponentJid)}, #origin_id{id = OriginId})},
+		Client, State);
 handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
 	#{ignore_commands := true} = State) ->
 	?dbg("ignore commands from tg: ~p", [TgMsg]),
 	{ok, State};
-handle_info(#telegram_update{send_type = SendType,
+handle_info(#telegram_update{packet = Pkt, msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client, State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
+	handle_info(TgUpd#telegram_update{packet = Pkt#message{type = groupchat}, msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
+	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
+	%% TODO not implemented
+	{ok, State};
+handle_info(#telegram_update{send_type = SendType, packet = Pkt,
 								msg = #{<<"chat">> := #{<<"id">> := ChatId},
 									<<"document">> := #{<<"file_id">> := FileId},
 									<<"from">> := #{<<"username">> := TgUserName},
@@ -75,7 +79,8 @@ handle_info(#telegram_update{send_type = SendType,
 						file_path = FilePath,
 						muc_jids = MucJids,
 						uid = #tg_id{chat_id = ChatId, id = Id},
-						send_type = SendType}}}}
+						send_type = SendType,
+						packet = Pkt}}}}
 	end;
 handle_info(#telegram_update{send_type = SendType,
 	msg = #{<<"chat">> := #{<<"id">> := CurChatId},

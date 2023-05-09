@@ -29,5 +29,6 @@
 	content_type = [] :: binary(),
 	muc_jids = [] :: binary(),
 	uid = [] :: any(),
-	send_type = msg :: msg | edit_msg
+	send_type = msg :: msg | edit_msg,
+	packet
 }).
