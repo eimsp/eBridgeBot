@@ -179,3 +179,25 @@ merge_entities(Entities) ->
 				(#entity{} = E, {#entity{} = E2, Acc}) ->
 					{E, Acc ++ [E2]}
 			end, {[], []}, Entities))).
+
+pkt_fun(type, PktFun, Type) ->
+	fun(#message{} = Pkt, To) ->
+		(PktFun(Pkt, To))#message{type = Type}
+	end;
+pkt_fun(id, PktFun, Id) ->
+	fun(#message{} = Pkt, To) ->
+		xmpp:set_subtag((PktFun(Pkt, To))#message{id = Id}, #origin_id{id = Id})
+	end;
+pkt_fun(from, PktFun, From) ->
+	fun(#message{} = Pkt, To) ->
+		(PktFun(Pkt, To))#message{from = jid:decode(From)}
+	end;
+pkt_fun(tag, PktFun, Tag) ->
+	fun(#message{} = Pkt, To) ->
+		xmpp:set_subtag(PktFun(Pkt, To), Tag)
+	end;
+pkt_fun(text, PktFun, Text) ->
+	fun(#message{} = Pkt, To) ->
+		(PktFun(Pkt, To))#message{body = [#text{data = Text}]}
+	end.
+
