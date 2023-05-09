@@ -206,8 +206,8 @@ fold_pkt_fun([], PktFun) -> PktFun;
 fold_pkt_fun([{K, V} | T], PktFun) ->
 	fold_pkt_fun(T, pkt_fun(K, PktFun, V)).
 
-send_to(Client, PktFun, To) ->
+send_to(Client, PktFun, To, BotId, Uid) ->
 	Module = case is_pid(Client) of true -> escalus_component; _ -> escalus end,
-	Module:send(Client, xmpp:encode(Pkt = PktFun(#message{}, To))),
-	{ok, Pkt}.
+	Module:send(Client, xmpp:encode(#message{id = Id} = PktFun(#message{}, To))),
+	ebridgebot:write_link(BotId, Id, Uid).
 

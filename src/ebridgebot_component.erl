@@ -116,10 +116,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 				{ok, Data} = Module:get_file(State#{file_path => FilePath}), %% TODO set get_file more universal
 				{ok, {{"HTTP/1.1", 201, _}, _, _}} =
 					httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], []),
-				[begin
-					 {ok, #message{id = OriginId}} = ebridgebot:send_to(Pid, ebridgebot:pkt_fun(text, PktFun, GetURL), MucJid),
-					 ebridgebot:write_link(BotId, OriginId, Uid)
-				 end || MucJid <- RoomJids]
+				[ebridgebot:send_to(Pid, ebridgebot:pkt_fun(text, PktFun, GetURL), MucJid, BotId, Uid) || MucJid <- RoomJids]
 			catch
 				E : R ->
 					?err("ERROR:~p: ~p", [E, R])

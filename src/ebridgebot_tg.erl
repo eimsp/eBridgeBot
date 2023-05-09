@@ -57,10 +57,9 @@ handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMs
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
 	%% TODO not implemented
 	{ok, State};
-handle_info(#telegram_update{send_type = SendType, packet_fun = PktFun,
+handle_info(#telegram_update{packet_fun = PktFun,
 								msg = #{<<"chat">> := #{<<"id">> := ChatId},
 									<<"document">> := #{<<"file_id">> := FileId},
-									<<"from">> := #{<<"username">> := TgUserName},
 									<<"message_id">> := Id} = TgMsg}, Client,
 	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State) ->
 	?dbg("telegram_update: upload: ~p", [TgMsg]),
@@ -146,8 +145,7 @@ handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := CurChatId}, <<"
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
 			PktFun2 = ebridgebot:fold_pkt_fun([{text, Text}], PktFun),
-			{ok, #message{id = OriginId}} = ebridgebot:send_to(Client, PktFun2, MucJid),
-			ebridgebot:write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
+			ebridgebot:send_to(Client, PktFun2, MucJid, BotId, #tg_id{chat_id = ChatId, id = Id})
 		end),
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{} = TgMsg}, Client, #{bot_name := BotName} = State) ->
