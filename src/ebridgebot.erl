@@ -164,7 +164,7 @@ pkt_fun() ->
 		xmpp:set_subtag(Pkt#message{id = Id, to = jid:decode(To)}, #origin_id{id = Id})
 	end.
 
--spec pkt_fun(type | from | tag | text, function(), binary() | replace() | origin_id() | fallback() | reply() | apply_to()) -> function().
+-spec pkt_fun(type | from | tag | text, function(), binary() | xmpp_element()) -> function().
 pkt_fun(type, PktFun, Type) ->
 	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{type = Type} end;
 pkt_fun(from, PktFun, From) ->
@@ -181,7 +181,7 @@ pkt_fun(text, PktFun, Text) ->
 		end
 	end.
 
--spec fold_pkt_fun(list({type | from | tag | text, binary() | term()}), function()) -> function().
+-spec fold_pkt_fun(list({type | from | tag | text, binary() | xmpp_element()}), function()) -> function().
 fold_pkt_fun([], PktFun) -> PktFun;
 fold_pkt_fun([{K, V} | T], PktFun) ->
 	fold_pkt_fun(T, pkt_fun(K, PktFun, V)).
