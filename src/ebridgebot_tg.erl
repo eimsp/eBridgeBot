@@ -10,7 +10,7 @@
 -define(CLEARING_INTERVAL, 24). %% in hours
 -define(LIFE_SPAN, 48). %% in hours
 
--record(telegram_update, {bot_name, send_type, msg}).
+-record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map()}).
 
 init(#{bot_name := BotName, token := Token} = Args) ->
 	?dbg("ebridgebot_tg: init pe4kin with args: ~p", [Args]),
@@ -25,18 +25,18 @@ init(#{bot_name := BotName, token := Token} = Args) ->
 
 	{ok, State}.
 
-handle_info(#telegram_update{bot_name = BotName, send_type = SendType, msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client,
-	#{bot_name := BotName, ignore_commands := true} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client,
+	#{ignore_commands := true} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
 	handle_info(TgUpd#telegram_update{msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
 handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
 	{ok, State};
-handle_info(#telegram_update{bot_name = BotName, msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
-	#{bot_name := BotName, ignore_commands := true} = State) ->
+handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
+	#{ignore_commands := true} = State) ->
 	?dbg("ignore commands from tg: ~p", [TgMsg]),
 	{ok, State};
-handle_info(#telegram_update{bot_name = BotName, send_type = SendType,
+handle_info(#telegram_update{send_type = SendType,
 								msg = #{<<"chat">> := #{<<"id">> := ChatId},
 									<<"document">> := #{<<"file_id">> := FileId},
 									<<"from">> := #{<<"username">> := TgUserName},
@@ -64,13 +64,13 @@ handle_info(#telegram_update{bot_name = BotName, send_type = SendType,
 						uid = #tg_id{chat_id = ChatId, id = Id},
 						send_type = SendType}}}}
 	end;
-handle_info(#telegram_update{bot_name = BotName, send_type = SendType,
+handle_info(#telegram_update{send_type = SendType,
 	msg = #{<<"chat">> := #{<<"id">> := CurChatId},
 		<<"reply_to_message">> :=
 		#{<<"from">> := #{<<"username">> := QuotedUser},
 			<<"message_id">> := Id,
 			<<"text">> := QuotedText},
-		<<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State) ->
+		<<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, nick := Nick, rooms := Rooms, component := Component} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
@@ -103,7 +103,7 @@ handle_info(#telegram_update{msg = #{<<"sticker">> := Sticker} = TgMsg} = TgUpd,
 	?dbg("telegram_update: sticker without emoji: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2#{<<"document">> => Sticker}}, Client, State);
-handle_info(#telegram_update{bot_name = BotName, send_type = SendType, msg = TgMsg} = TgUpd, Client, State)
+handle_info(#telegram_update{send_type = SendType, msg = TgMsg} = TgUpd, Client, State)
 	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg); is_map_key(<<"voice">>, TgMsg) ->
 	?dbg("telegram_update: photo | video | audio | voice, ~p, ~p", [SendType, TgMsg]),
 	ReplaceFun =
@@ -118,24 +118,24 @@ handle_info(#telegram_update{bot_name = BotName, send_type = SendType, msg = TgM
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2}, Client, State);
-handle_info(#telegram_update{bot_name = BotName, send_type = SendType,
+handle_info(#telegram_update{send_type = SendType,
 	msg = #{<<"chat">> := #{<<"id">> := CurChatId},
 		<<"from">> := #{<<"username">> := TgUserName},
 		<<"message_id">> := Id,
 		<<"text">> := Text}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
+	#{bot_id := BotId, rooms := Rooms, component := Component} = State) ->
 	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
 			ebridgebot:send(SendType, Client, BotId, Component, MucJid, #tg_id{chat_id = ChatId, id = Id}, TgUserName, Text)
 		end),
 	{ok, State};
-handle_info({pe4kin_update, BotName, #{<<"message">> := TgMsg}}, Client, State) ->
-	handle_info(#telegram_update{bot_name = BotName, send_type = msg, msg = TgMsg}, Client, State);
-handle_info({pe4kin_update, BotName, #{<<"edited_message">> := TgMsg}}, Client, State) ->
+handle_info({pe4kin_update, _BotName, #{<<"message">> := TgMsg}}, Client, State) ->
+	handle_info(#telegram_update{send_type = msg, msg = TgMsg}, Client, State);
+handle_info({pe4kin_update, _BotName, #{<<"edited_message">> := TgMsg}}, Client, State) ->
 %%	Id = ebridgebot:gen_uuid(),
-%%	handle_info(#telegram_update{bot_name = BotName, send_type = edit_msg, msg = TgMsg}, Client, State#{packet => #message{id = Id, sub_els = [#origin_id{id = Id}]}});
-	handle_info(#telegram_update{bot_name = BotName, send_type = edit_msg, msg = TgMsg}, Client, State);
+%%	handle_info(#telegram_update{send_type = edit_msg, msg = TgMsg}, Client, State#{packet => #message{id = Id, sub_els = [#origin_id{id = Id}]}});
+	handle_info(#telegram_update{send_type = edit_msg, msg = TgMsg}, Client, State);
 handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
 	?dbg("pe4kin_update: ~p", [TgMsg]),
 	{ok, State};
