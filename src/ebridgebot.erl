@@ -138,30 +138,33 @@ upd_links(BotId, OriginId, #mam_archived{id = MamId}) ->
 index_read(BotId, Key, Attr) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Attr)].
 
--spec to_rooms(integer() | binary(), list(#muc_state{}), function()) -> list(any()).
+-spec to_rooms(integer() | binary(), list(#muc_state{}), function()) -> list(function()).
 to_rooms(CurChatId, Rooms, Fun) ->
 	[Fun(MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
 
+-spec merge_entities(list(entity())) -> list(entity()).
 merge_entities(Entities) ->
 	lists:flatten(tuple_to_list(
 		lists:foldl(
 			fun(#entity{} = E, {[], Acc}) ->
-				{E, Acc};
+					{E, Acc};
 				(#entity{offset = Offset, length = Length, type = Type},
-					{#entity{offset = LastOffset, length = LastLength, type = Type} = E, Acc})
+				 {#entity{offset = LastOffset, length = LastLength, type = Type} = E, Acc})
 					when LastOffset + LastLength == Offset ->
 					{E#entity{length = Offset + Length - LastOffset}, Acc};
 				(#entity{} = E, {#entity{} = E2, Acc}) ->
 					{E, Acc ++ [E2]}
 			end, {[], []}, Entities))).
 
+-spec pkt_fun() -> function().
 pkt_fun() ->
 	fun(#message{} = Pkt, To) ->
 		Id = gen_uuid(),
 		xmpp:set_subtag(Pkt#message{id = Id, to = jid:decode(To)}, #origin_id{id = Id})
 	end.
 
+-spec pkt_fun(type | from | tag | text, function(), binary() | replace() | origin_id() | fallback() | reply() | apply_to()) -> function().
 pkt_fun(type, PktFun, Type) ->
 	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{type = Type} end;
 pkt_fun(from, PktFun, From) ->
@@ -178,12 +181,13 @@ pkt_fun(text, PktFun, Text) ->
 		end
 	end.
 
+-spec fold_pkt_fun(list({type | from | tag | text, binary() | term()}), function()) -> function().
 fold_pkt_fun([], PktFun) -> PktFun;
 fold_pkt_fun([{K, V} | T], PktFun) ->
 	fold_pkt_fun(T, pkt_fun(K, PktFun, V)).
 
+-spec send_to(pid() | term(), function(), binary(), atom(), term()) -> ok.
 send_to(Client, PktFun, To, BotId, Uid) ->
 	Module = case is_pid(Client) of true -> escalus_component; _ -> escalus end,
 	Module:send(Client, xmpp:encode(#message{id = Id} = PktFun(#message{}, To))),
 	ebridgebot:write_link(BotId, Id, Uid).
-
