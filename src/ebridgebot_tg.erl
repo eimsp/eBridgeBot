@@ -10,7 +10,9 @@
 -define(CLEARING_INTERVAL, 24). %% in hours
 -define(LIFE_SPAN, 48). %% in hours
 
--record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map(), packet = #message{} :: #message{}}).
+-record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map(),
+	packet = #message{} :: #message{},
+	packet_fun = fun(_, To) -> #message{to = jid:decode(To)} end :: function()}).
 
 init(#{bot_name := BotName, token := Token} = Args) ->
 	?dbg("ebridgebot_tg: init pe4kin with args: ~p", [Args]),
@@ -25,30 +27,30 @@ init(#{bot_name := BotName, token := Token} = Args) ->
 
 	{ok, State}.
 
-handle_info(#telegram_update{packet = Pkt,
+handle_info(#telegram_update{packet_fun = PktFun,
 				msg = #{<<"edited_message">> :=
 							#{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := MessageId} = TgMsg} = EditMsg},
 	Client, #{bot_id := BotId} = State) ->
-	NewPkt =
+	NewPktFun =
 		case ebridgebot:index_read(BotId, #tg_id{chat_id = ChatId, id = MessageId}, #xmpp_link.uid) of
 			[#xmpp_link{origin_id = ReplaceId} | _] ->
-				Pkt#message{sub_els = [#replace{id = ReplaceId}]};
-			_ -> Pkt
+				ebridgebot:pkt_fun(tag, PktFun, #replace{id = ReplaceId});
+			_ -> PktFun
 		end,
-	handle_info(#telegram_update{send_type = edit_msg,
-								 msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}, packet = NewPkt}, Client, State);
-handle_info(#telegram_update{packet = Pkt, msg = #{<<"message">> := TgMsg}}, Client, #{component := ComponentJid} = State) ->
+	handle_info(#telegram_update{send_type = edit_msg, packet_fun = NewPktFun,
+								 msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}}, Client, State);
+handle_info(#telegram_update{packet_fun = PktFun, msg = #{<<"message">> := TgMsg}}, Client, #{component := ComponentJid} = State) ->
 	OriginId = ebridgebot:gen_uuid(),
-	handle_info(#telegram_update{msg = TgMsg,
-								 packet = xmpp:set_subtag(Pkt#message{id = OriginId, from = jid:decode(ComponentJid)}, #origin_id{id = OriginId})},
-		Client, State);
+	PktFun2 = ebridgebot:pkt_fun(id, PktFun, OriginId),
+	PktFun3 = ebridgebot:pkt_fun(from, PktFun2, ComponentJid),
+	handle_info(#telegram_update{msg = TgMsg, packet_fun = PktFun3}, Client, State);
 handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
 	#{ignore_commands := true} = State) ->
 	?dbg("ignore commands from tg: ~p", [TgMsg]),
 	{ok, State};
-handle_info(#telegram_update{packet = Pkt, msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client, State) when Type == <<"group">>; Type == <<"supergroup">> ->
+handle_info(#telegram_update{packet_fun = PktFun, msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client, State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
-	handle_info(TgUpd#telegram_update{packet = Pkt#message{type = groupchat}, msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
+	handle_info(TgUpd#telegram_update{packet_fun = ebridgebot:pkt_fun(type, PktFun, groupchat), msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
 handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
 	%% TODO not implemented
