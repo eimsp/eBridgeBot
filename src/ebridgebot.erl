@@ -180,7 +180,7 @@ merge_entities(Entities) ->
 					{E, Acc ++ [E2]}
 			end, {[], []}, Entities))).
 
-pkt_fun(id) ->
+pkt_fun() ->
 	fun(#message{} = Pkt, To) ->
 		Id = gen_uuid(),
 		xmpp:set_subtag(Pkt#message{id = Id, to = jid:decode(To)}, #origin_id{id = Id})
@@ -193,11 +193,13 @@ pkt_fun(from, PktFun, From) ->
 pkt_fun(tag, PktFun, Tag) ->
 	fun(#message{} = Pkt, To) -> xmpp:set_subtag(PktFun(Pkt, To), Tag) end;
 pkt_fun(text, PktFun, Text) ->
-	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{body = [#text{data = Text}]} end;
-pkt_fun(nick, PktFun, Nick) ->
 	fun(#message{} = Pkt, To) ->
-		Pkt2 = #message{body = [#text{data = Text}]} = PktFun(Pkt, To),
-		Pkt2#message{body = [#text{data = <<?NICK(Nick), Text/binary>>}]}
+		case PktFun(Pkt, To) of
+			#message{body = [#text{data = OrigText}]} = Pkt2 ->
+				Pkt2#message{body = [#text{data = <<OrigText/binary, Text/binary>>}]};
+			#message{body = []} = Pkt2 ->
+				Pkt2#message{body = [#text{data = Text}]}
+		end
 	end.
 
 fold_pkt_fun([], PktFun) -> PktFun;

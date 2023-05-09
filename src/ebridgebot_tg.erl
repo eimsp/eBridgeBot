@@ -11,7 +11,7 @@
 -define(LIFE_SPAN, 48). %% in hours
 
 -record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map(),
-	packet_fun = ebridgebot:pkt_fun(id) :: function()}).
+	packet_fun = ebridgebot:pkt_fun() :: function()}).
 
 init(#{bot_name := BotName, token := Token} = Args) ->
 	?dbg("ebridgebot_tg: init pe4kin with args: ~p", [Args]),
@@ -30,6 +30,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 				msg = #{<<"edited_message">> :=
 							#{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := MessageId} = TgMsg} = EditMsg},
 	Client, #{bot_id := BotId} = State) ->
+	?dbg("handle component: edit: ~p", [TgMsg]),
 	NewPktFun =
 		case ebridgebot:index_read(BotId, #tg_id{chat_id = ChatId, id = MessageId}, #xmpp_link.uid) of
 			[#xmpp_link{origin_id = ReplaceId} | _] ->
@@ -39,9 +40,10 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	handle_info(#telegram_update{send_type = edit_msg, packet_fun = NewPktFun,
 								 msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
-							msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName}, <<"text">> := Text} = TgMsg}},
+							msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName}} = TgMsg}},
 		Client, #{component := ComponentJid} = State) ->
-	PktFun2 = ebridgebot:fold_pkt_fun([{from, ComponentJid}, {text, Text}, {nick, TgUserName}], PktFun),
+	?dbg("handle component: message: ~p", [TgMsg]),
+	PktFun2 = ebridgebot:fold_pkt_fun([{from, ComponentJid}, {text, <<?NICK(TgUserName)>>}], PktFun),
 	handle_info(#telegram_update{msg = TgMsg, packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
 	#{ignore_commands := true} = State) ->
@@ -140,12 +142,13 @@ handle_info(#telegram_update{send_type = SendType, msg = TgMsg} = TgUpd, Client,
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2}, Client, State);
-handle_info(#telegram_update{packet_fun = PktFun, msg = #{<<"chat">> := #{<<"id">> := CurChatId}, <<"message_id">> := Id}} = TgMsg, Client,
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := CurChatId}, <<"from">> := #{<<"username">> := TgUserName}, <<"message_id">> := Id, <<"text">> := Text}, packet_fun = PktFun} = TgMsg, Client,
 	#{bot_id := BotId, rooms := Rooms} = State) ->
 	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
-			{ok, #message{id = OriginId}} = ebridgebot:send_to(Client, PktFun, MucJid),
+			PktFun2 = ebridgebot:fold_pkt_fun([{text, Text}], PktFun),
+			{ok, #message{id = OriginId}} = ebridgebot:send_to(Client, PktFun2, MucJid),
 			ebridgebot:write_link(BotId, OriginId, #tg_id{chat_id = ChatId, id = Id})
 		end),
 	{ok, State};
