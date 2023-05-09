@@ -82,33 +82,33 @@ handle_info(#telegram_update{packet_fun = PktFun,
 						uid = #tg_id{chat_id = ChatId, id = Id},
 						packet_fun = ebridgebot:pkt_fun(text, PktFun, Text)}}}}
 	end;
-handle_info(#telegram_update{send_type = SendType, packet_fun = PktFun,
+handle_info(#telegram_update{packet_fun = PktFun,
 	msg = #{<<"chat">> := #{<<"id">> := CurChatId},
-		<<"reply_to_message">> :=
-		#{<<"from">> := #{<<"username">> := QuotedUser},
-			<<"message_id">> := Id,
-			<<"text">> := QuotedText},
-		<<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, nick := Nick, rooms := Rooms, component := Component} = State) ->
+		   <<"from">> := #{<<"username">> := TgUsername},
+		   <<"reply_to_message">> :=
+				#{<<"from">> := #{<<"username">> := QuotedUser},
+				  <<"message_id">> := Id,
+				  <<"text">> := QuotedText},
+		   <<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, nick := Nick, rooms := Rooms} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
 	Text3 = <<RepliedText/binary, $\n, Text/binary>>,
+	PktFun2 = ebridgebot:pkt_fun(text, PktFun, Text3),
+	NickSize = byte_size(<<?NICK(TgUsername)>>),
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
 			Uid = #tg_id{chat_id = ChatId, id = Id},
-			SubEls =
+			PktFun3 =
 				case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
 					[#xmpp_link{origin_id = OriginId} | _] ->
-						NickSize = byte_size(<<?NICK(Nick)>>),
-						PktFun2 = ebridgebot:fold_pkt_fun([{tag, #reply{id = OriginId, to = jid:replace_resource(jid:decode(MucJid), Nick)}},
-							{tag, #fallback{for = ?NS_REPLY, body = [#fb_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}]}}], PktFun),
-						?dbg("!!!~p", [PktFun2(#message{}, MucJid)]),
-						[#reply{id = OriginId, to = jid:replace_resource(jid:decode(MucJid), Nick)},
-							#fallback{for = ?NS_REPLY, body = [#fb_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}]}];
+						ebridgebot:fold_pkt_fun(
+							[{tag, #reply{id = OriginId, to = jid:replace_resource(jid:decode(MucJid), Nick)}},
+							{tag, #fallback{for = ?NS_REPLY, body = [#fb_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}]}}], PktFun2);
 					[] ->
-						[]
+						PktFun2
 				end,
-			ebridgebot:send(SendType, Client, BotId, Component, MucJid, Uid, QuotedUser, Text3, SubEls)
+			ebridgebot:send_to(Client, PktFun3, MucJid, BotId, Uid)
 		end),
 	{ok, State};
 handle_info(#telegram_update{msg = #{<<"forward_from">> := #{<<"username">> := QuotedUser}, <<"text">> := Text} = TgMsg} = TgUpd, Client, State) ->
