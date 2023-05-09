@@ -23,19 +23,24 @@ init(#{bot_name := BotName, token := Token} = Args) ->
 
 	{ok, State}.
 
-handle_info({telegram_update, BotName, _SendType,
-		#{<<"chat">>        := #{<<"type">> := Type},
-		  <<"entities">>    := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
+handle_info({telegram_update, BotName, SendType, #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg}, Client,
 	#{bot_name := BotName, ignore_commands := true} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
+	handle_info({telegram_update, BotName, SendType, TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
+handle_info({telegram_update, _BotName, _SendType, #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
+	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
+	{ok, State};
+handle_info({telegram_update, BotName, _SendType,
+		#{<<"entities">>    := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
+	#{bot_name := BotName, ignore_commands := true} = State) ->
 	?dbg("ignore commands from tg: ~p", [TgMsg]),
 	{ok, State};
 handle_info({telegram_update, BotName, SendType,
-		#{<<"chat">>        := #{<<"id">> := ChatId, <<"type">> := Type},
+		#{<<"chat">>        := #{<<"id">> := ChatId},
 		 <<"document">>     := #{<<"file_id">> := FileId},
 		 <<"from">>         := #{<<"username">> := TgUserName},
 		 <<"message_id">>   := Id} = TgMsg}, Client,
-	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State)
-	when Type == <<"group">>; Type == <<"supergroup">> ->
+	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State) ->
 	?dbg("telegram_update: upload: ~p", [TgMsg]),
 	Text = case maps:find(<<"caption">>, TgMsg) of {ok, V} -> <<V/binary, $\n>>; _ -> <<>> end,
 	case ebridgebot:to_rooms(ChatId, Rooms, fun(_, MucJid) -> MucJid end) of
@@ -59,13 +64,12 @@ handle_info({telegram_update, BotName, SendType,
 						send_type = SendType}}}}
 	end;
 handle_info({telegram_update, BotName, SendType,
-	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
+	#{<<"chat">> := #{<<"id">> := CurChatId},
 	  <<"reply_to_message">> :=
 		#{<<"from">> := #{<<"username">> := QuotedUser},
 		  <<"message_id">> := Id,
 		  <<"text">> := QuotedText},
-	  <<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State)
-		when Type == <<"group">>; Type == <<"supergroup">> ->
+	  <<"text">> := Text} = TgMsg}, Client, #{bot_id := BotId, bot_name := BotName, nick := Nick, rooms := Rooms, component := Component} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
@@ -115,11 +119,11 @@ handle_info({telegram_update, BotName, SendType, TgMsg}, Client, State)
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
 	handle_info({telegram_update, BotName, SendType, TgMsg2}, Client, State);
 handle_info({telegram_update, BotName, SendType,
-	#{<<"chat">> := #{<<"type">> := Type, <<"id">> := CurChatId},
+	#{<<"chat">> := #{<<"id">> := CurChatId},
 		<<"from">> := #{<<"username">> := TgUserName},
 		<<"message_id">> := Id,
 		<<"text">> := Text}} = TgMsg, Client,
-	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
+	#{bot_id := BotId, bot_name := BotName, rooms := Rooms, component := Component} = State) ->
 	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
 	ebridgebot:to_rooms(CurChatId, Rooms,
 		fun(ChatId, MucJid) ->
