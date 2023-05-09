@@ -107,8 +107,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 		_Client,
 		#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
 	when is_map_key(FileId, Upload) ->
-	#{FileId := #upload_info{nick = Nick, content_type = ContentType, file_path = FilePath,
-		muc_jids = RoomJids, caption = Caption, uid = Uid, send_type = SendType}} = Upload,
+	#{FileId := #upload_info{content_type = ContentType, file_path = FilePath, muc_jids = RoomJids, uid = Uid, packet_fun = PktFun}} = Upload,
 	?dbg("upload slot: ~p", [IQ]),
 	Pid = self(),
 	spawn( %% async get and put data
@@ -117,7 +116,10 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 				{ok, Data} = Module:get_file(State#{file_path => FilePath}), %% TODO set get_file more universal
 				{ok, {{"HTTP/1.1", 201, _}, _, _}} =
 					httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], []),
-				[ebridgebot:send(SendType, Pid, BotId, ComponentJid, MucJid, Uid, Nick, <<Caption/binary, GetURL/binary>>) || MucJid <- RoomJids]
+				[begin
+					 {ok, #message{id = OriginId}} = ebridgebot:send_to(Pid, ebridgebot:pkt_fun(text, PktFun, GetURL), MucJid),
+					 ebridgebot:write_link(BotId, OriginId, Uid)
+				 end || MucJid <- RoomJids]
 			catch
 				E : R ->
 					?err("ERROR:~p: ~p", [E, R])

@@ -10,8 +10,9 @@
 -define(CLEARING_INTERVAL, 24). %% in hours
 -define(LIFE_SPAN, 48). %% in hours
 
--record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map(),
-	packet_fun = ebridgebot:pkt_fun() :: function()}).
+-record(telegram_update, {send_type = msg                   :: msg | edit_msg,
+						  msg = []                          :: map(),
+						  packet_fun = ebridgebot:pkt_fun() :: function()}).
 
 init(#{bot_name := BotName, token := Token} = Args) ->
 	?dbg("ebridgebot_tg: init pe4kin with args: ~p", [Args]),
@@ -76,14 +77,11 @@ handle_info(#telegram_update{send_type = SendType, packet_fun = PktFun,
 			{ok, State#{upload =>
 				Upload#{FileId =>
 					#upload_info{file_id = FileId,
-						caption = Text,
 						content_type = ContentType,
-						nick = TgUserName,
 						file_path = FilePath,
 						muc_jids = MucJids,
 						uid = #tg_id{chat_id = ChatId, id = Id},
-						send_type = SendType,
-						packet_fun = PktFun}}}}
+						packet_fun = ebridgebot:pkt_fun(text, PktFun, Text)}}}}
 	end;
 handle_info(#telegram_update{send_type = SendType, packet_fun = PktFun,
 	msg = #{<<"chat">> := #{<<"id">> := CurChatId},

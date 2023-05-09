@@ -23,12 +23,9 @@
 
 -record(upload_info, {
 	file_id = [] :: binary(),
-	caption = [] :: binary(),
-	nick = [] :: binary(),
 	file_path = [] :: binary(),
 	content_type = [] :: binary(),
 	muc_jids = [] :: binary(),
 	uid = [] :: any(),
-	send_type = msg :: msg | edit_msg,
 	packet_fun = [] :: function()
 }).
