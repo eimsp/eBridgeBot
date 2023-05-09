@@ -180,24 +180,32 @@ merge_entities(Entities) ->
 					{E, Acc ++ [E2]}
 			end, {[], []}, Entities))).
 
-pkt_fun(type, PktFun, Type) ->
+pkt_fun(id) ->
 	fun(#message{} = Pkt, To) ->
-		(PktFun(Pkt, To))#message{type = Type}
-	end;
-pkt_fun(id, PktFun, Id) ->
-	fun(#message{} = Pkt, To) ->
-		xmpp:set_subtag((PktFun(Pkt, To))#message{id = Id}, #origin_id{id = Id})
-	end;
-pkt_fun(from, PktFun, From) ->
-	fun(#message{} = Pkt, To) ->
-		(PktFun(Pkt, To))#message{from = jid:decode(From)}
-	end;
-pkt_fun(tag, PktFun, Tag) ->
-	fun(#message{} = Pkt, To) ->
-		xmpp:set_subtag(PktFun(Pkt, To), Tag)
-	end;
-pkt_fun(text, PktFun, Text) ->
-	fun(#message{} = Pkt, To) ->
-		(PktFun(Pkt, To))#message{body = [#text{data = Text}]}
+		Id = gen_uuid(),
+		xmpp:set_subtag(Pkt#message{id = Id, to = jid:decode(To)}, #origin_id{id = Id})
 	end.
+
+pkt_fun(type, PktFun, Type) ->
+	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{type = Type} end;
+pkt_fun(from, PktFun, From) ->
+	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{from = jid:decode(From)} end;
+pkt_fun(tag, PktFun, Tag) ->
+	fun(#message{} = Pkt, To) -> xmpp:set_subtag(PktFun(Pkt, To), Tag) end;
+pkt_fun(text, PktFun, Text) ->
+	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{body = [#text{data = Text}]} end;
+pkt_fun(nick, PktFun, Nick) ->
+	fun(#message{} = Pkt, To) ->
+		Pkt2 = #message{body = [#text{data = Text}]} = PktFun(Pkt, To),
+		Pkt2#message{body = [#text{data = <<?NICK(Nick), Text/binary>>}]}
+	end.
+
+fold_pkt_fun([], PktFun) -> PktFun;
+fold_pkt_fun([{K, V} | T], PktFun) ->
+	fold_pkt_fun(T, pkt_fun(K, PktFun, V)).
+
+send_to(Client, PktFun, To) ->
+	Module = case is_pid(Client) of true -> escalus_component; _ -> escalus end,
+	Module:send(Client, xmpp:encode(Pkt = PktFun(#message{}, To))),
+	{ok, Pkt}.
 
