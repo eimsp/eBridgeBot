@@ -10,7 +10,7 @@
 -define(CLEARING_INTERVAL, 24). %% in hours
 -define(LIFE_SPAN, 48). %% in hours
 
--record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map()}).
+-record(telegram_update, {send_type = msg :: msg | edit_msg, msg = [] :: map(), packet = #message{} :: #message{}}).
 
 init(#{bot_name := BotName, token := Token} = Args) ->
 	?dbg("ebridgebot_tg: init pe4kin with args: ~p", [Args]),
@@ -25,6 +25,19 @@ init(#{bot_name := BotName, token := Token} = Args) ->
 
 	{ok, State}.
 
+handle_info(#telegram_update{packet = Pkt,
+				msg = #{<<"edited_message">> := #{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := MessageId} = TgMsg} = EditMsg},
+	Client, #{bot_id := BotId} = State) ->
+	NewPkt =
+		case ebridgebot:index_read(BotId, #tg_id{chat_id = ChatId, id = MessageId}, #xmpp_link.uid) of
+			[#xmpp_link{origin_id = ReplaceId} | _] ->
+				Pkt#message{sub_els = [#replace{id = ReplaceId}]};
+			_ -> Pkt
+		end,
+	handle_info(#telegram_update{send_type = edit_msg, msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}, packet = NewPkt}, Client, State);
+handle_info(#telegram_update{packet = Pkt, msg = #{<<"message">> := TgMsg}}, Client, State) ->
+	OriginId = ebridgebot:gen_uuid(),
+	handle_info(#telegram_update{msg = TgMsg, packet = xmpp:set_subtag(Pkt#message{id = OriginId}, #origin_id{id = OriginId})}, Client, State);
 handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client,
 	#{ignore_commands := true} = State) when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
@@ -130,15 +143,8 @@ handle_info(#telegram_update{send_type = SendType,
 			ebridgebot:send(SendType, Client, BotId, Component, MucJid, #tg_id{chat_id = ChatId, id = Id}, TgUserName, Text)
 		end),
 	{ok, State};
-handle_info({pe4kin_update, _BotName, #{<<"message">> := TgMsg}}, Client, State) ->
-	handle_info(#telegram_update{send_type = msg, msg = TgMsg}, Client, State);
-handle_info({pe4kin_update, _BotName, #{<<"edited_message">> := TgMsg}}, Client, State) ->
-%%	Id = ebridgebot:gen_uuid(),
-%%	handle_info(#telegram_update{send_type = edit_msg, msg = TgMsg}, Client, State#{packet => #message{id = Id, sub_els = [#origin_id{id = Id}]}});
-	handle_info(#telegram_update{send_type = edit_msg, msg = TgMsg}, Client, State);
-handle_info({pe4kin_update, BotName, TgMsg}, _Client, #{bot_name := BotName} = State) ->
-	?dbg("pe4kin_update: ~p", [TgMsg]),
-	{ok, State};
+handle_info({pe4kin_update, BotName, #{} = TgMsg}, Client, #{bot_name := BotName} = State) ->
+	handle_info(#telegram_update{msg = TgMsg}, Client, State);
 handle_info({pe4kin_send, ChatId, Text}, _Client, #{bot_name := BotName} = State) ->
 	Res = pe4kin:send_message(BotName, #{chat_id => ChatId, text => Text}),
 	?dbg("pe4kin_send: ~p", [Res]),
