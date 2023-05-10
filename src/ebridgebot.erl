@@ -68,7 +68,6 @@ wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integ
 	wait_for_result(Fun, PredFun, Counter, Interval).
 
 %% component help API
-
 -spec tag_decorator(list(xmpp_element()), list(xmpp_element() | list(any())), atom(), atom()) -> function().
 tag_decorator([], Data, Mod, Fun) ->
 	fun() -> Mod:Fun(Data) end;
@@ -101,15 +100,6 @@ password(#{type := Type, password := <<_/integer, _/binary>> = Pwd}) when Type =
 password(#{type := Type}) when Type == unsubscribe; Type == subscribe -> <<>>;
 password(_) -> undefined.
 
--spec edit_msg(jid(), jid(), binary(), binary()) -> message().
-edit_msg(From, To, Text, ReplaceId) ->
-	edit_msg(From, To, Text, ReplaceId, []).
--spec edit_msg(jid(), jid(), binary(), binary(), list(term())) -> message().
-edit_msg(From, To, Text, ReplaceId, SubEls) ->
-	OriginId = ebridgebot:gen_uuid(),
-	#message{id = OriginId, type = groupchat, from = From, to = To, body = [#text{data = Text}],
-		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId} | SubEls]}.
-
 -spec write_link(atom(), binary(), any()) -> ok.
 write_link(BotId, OriginId, Uid) ->
 	write_link(BotId, OriginId, Uid, []).
@@ -134,7 +124,7 @@ upd_links(BotId, OriginId, #mam_archived{id = MamId}) ->
 	Links = index_read(BotId, OriginId, #xmpp_link.origin_id),
 	[mnesia:dirty_write(setelement(1, Link#xmpp_link{mam_id = MamId}, Table)) || Link <- Links].
 
--spec index_read(binary(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
+-spec index_read(atom(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
 index_read(BotId, Key, Attr) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Attr)].
 
