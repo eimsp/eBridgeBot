@@ -27,8 +27,7 @@ init(#{bot_name := BotName, token := Token} = Args) ->
 	{ok, State}.
 
 handle_info(#telegram_update{packet_fun = PktFun,
-				msg = #{<<"edited_message">> :=
-							#{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := MessageId} = TgMsg} = EditMsg},
+							 msg = #{<<"edited_message">> := #{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := MessageId} = TgMsg} = EditMsg},
 	Client, #{bot_id := BotId} = State) ->
 	?dbg("handle component: edit: ~p", [TgMsg]),
 	NewPktFun =
@@ -38,9 +37,9 @@ handle_info(#telegram_update{packet_fun = PktFun,
 			_ -> PktFun
 		end,
 	handle_info(#telegram_update{packet_fun = NewPktFun,
-								 msg = (maps:remove(<<"edited_message">>, EditMsg))#{<<"message">> => TgMsg}}, Client, State);
+								 msg = maps:remove(<<"edited_message">>, EditMsg#{<<"message">> => TgMsg})}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
-							msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName}} = TgMsg}},
+							 msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName}} = TgMsg}},
 		Client, #{component := ComponentJid} = State) ->
 	?dbg("handle component: message: ~p", [TgMsg]),
 	PktFun2 = ebridgebot:fold_pkt_fun([{from, ComponentJid}, {text, <<?NICK(TgUserName)>>}], PktFun),
@@ -49,9 +48,12 @@ handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"
 	#{ignore_commands := true} = State) -> %% TODO implement entities
 	?dbg("ignore commands from tg: ~p", [TgMsg]),
 	{ok, State};
-handle_info(#telegram_update{packet_fun = PktFun, msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client, State) when Type == <<"group">>; Type == <<"supergroup">> ->
+handle_info(#telegram_update{packet_fun = PktFun,
+							 msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client, State)
+	when Type == <<"group">>; Type == <<"supergroup">> ->
 	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
-	handle_info(TgUpd#telegram_update{packet_fun = ebridgebot:pkt_fun(type, PktFun, groupchat), msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
+	handle_info(TgUpd#telegram_update{packet_fun = ebridgebot:pkt_fun(type, PktFun, groupchat),
+									  msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
 handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
 	%% TODO not implemented
