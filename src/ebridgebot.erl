@@ -159,18 +159,22 @@ pkt_fun() ->
 
 -spec pkt_fun(type | from | tag | text, function(), binary() | xmpp_element() | list(xmpp_element())) -> function().
 pkt_fun(type, PktFun, Type) ->
-	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{type = Type} end;
+	fun(Pkt, To) -> (PktFun(Pkt, To))#message{type = Type} end;
 pkt_fun(from, PktFun, From) ->
-	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{from = jid:decode(From)} end;
+	fun(Pkt, To) -> (PktFun(Pkt, To))#message{from = jid:decode(From)} end;
 pkt_fun(tag, PktFun, []) ->	PktFun;
 pkt_fun(tag, PktFun, [Tag | Tags]) ->
 	pkt_fun(tag, pkt_fun(tag, PktFun, Tag), Tags);
 pkt_fun(tag, PktFun, Tag) ->
-	fun(#message{} = Pkt, To) -> xmpp:set_subtag(PktFun(Pkt, To), Tag) end;
+	fun(Pkt, To) -> xmpp:set_subtag(PktFun(Pkt, To), Tag) end;
+pkt_fun(lang, PktFun, Lang) ->
+	fun(#message{body = [Text = #text{}]} = Pkt, To) ->
+		PktFun(Pkt#message{body = [Text#text{lang = Lang}]}, To)
+	end;
 pkt_fun(text, PktFun, Text) ->
-	fun(#message{} = Pkt, To) ->
-		Pkt2 = #message{body = [#text{data = OrigText}]} = PktFun(Pkt, To),
-		Pkt2#message{body = [#text{data = <<OrigText/binary, Text/binary>>}]}
+	fun(Pkt, To) ->
+		Pkt2 = #message{body = [Txt = #text{data = OrigText}]} = PktFun(Pkt, To),
+		Pkt2#message{body = [Txt#text{data = <<OrigText/binary, Text/binary>>}]}
 	end.
 
 -spec fold_pkt_fun(list({type | from | tag | text, binary() | xmpp_element()}), function()) -> function().

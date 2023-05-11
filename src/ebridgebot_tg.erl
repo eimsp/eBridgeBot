@@ -39,10 +39,10 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	handle_info(#telegram_update{packet_fun = NewPktFun,
 								 msg = maps:remove(<<"edited_message">>, EditMsg#{<<"message">> => TgMsg})}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
-							 msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName}} = TgMsg}},
+							 msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName, <<"language_code">> := Lang}} = TgMsg}},
 		Client, #{component := ComponentJid} = State) ->
 	?dbg("handle component: message: ~p", [TgMsg]),
-	PktFun2 = ebridgebot:fold_pkt_fun([{from, ComponentJid}, {text, <<?NICK(TgUserName)>>}], PktFun),
+	PktFun2 = ebridgebot:fold_pkt_fun([{lang, Lang}, {from, ComponentJid}, {text, <<?NICK(TgUserName)>>}], PktFun),
 	handle_info(#telegram_update{msg = TgMsg, packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
 	#{ignore_commands := true} = State) ->
