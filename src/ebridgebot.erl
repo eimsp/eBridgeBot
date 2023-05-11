@@ -162,11 +162,9 @@ pkt_fun(type, PktFun, Type) ->
 	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{type = Type} end;
 pkt_fun(from, PktFun, From) ->
 	fun(#message{} = Pkt, To) -> (PktFun(Pkt, To))#message{from = jid:decode(From)} end;
-pkt_fun(tag, PktFun, Tags) when is_list(Tags) ->
-	lists:foldl(
-		fun(Tag, AccPktFun) ->
-			fun(Pkt, To) -> xmpp:set_subtag(AccPktFun(Pkt, To), Tag) end
-		end, PktFun, Tags);
+pkt_fun(tag, PktFun, []) ->	PktFun;
+pkt_fun(tag, PktFun, [Tag | Tags]) ->
+	pkt_fun(tag, pkt_fun(tag, PktFun, Tag), Tags);
 pkt_fun(tag, PktFun, Tag) ->
 	fun(#message{} = Pkt, To) -> xmpp:set_subtag(PktFun(Pkt, To), Tag) end;
 pkt_fun(text, PktFun, Text) ->
