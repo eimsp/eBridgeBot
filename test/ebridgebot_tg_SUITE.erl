@@ -15,6 +15,7 @@
 
 -define(NS_MSG_MODERATE, <<"urn:xmpp:message-moderate:0">>).
 -define(CONTENT_TYPE, "image/png").
+-define(LANG, <<"en">>).
 
 -import(ebridgebot, [wait_for_result/2, wait_for_result/4, wait_for_list/1, wait_for_list/2]).
 
@@ -150,8 +151,9 @@ muc_story(Config) ->
 
 			TgAliceMsg = <<"Hello from telegram!">>, TgAliceMsg2 = <<"2: Hello from telegram!">>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
-			escalus:assert(is_groupchat_message, [<<?NICK(AliceNick), TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
-			TgUid2 = TgUid#tg_id{id = MessageId +1},
+			escalus:assert(is_groupchat_message, [<<?NICK(AliceNick), TgAliceMsg/binary>>], FromTgAlicePkt = escalus:wait_for_stanza(Alice)),
+			#message{body = [#text{lang = ?LANG}]} = xmpp:decode(FromTgAlicePkt),
+			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2, mam_id = MamId2}] =
 				wait_for_result(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end,
 					fun([#xmpp_link{mam_id = MamId2}]) when is_binary(MamId2) -> true; (_) -> false end) ,
@@ -358,7 +360,7 @@ reply_story(Config) ->
 
 			TgReply =
 				#{<<"reply_to_message">> =>
-				#{<<"from">> => #{<<"username">> => BotNick},
+				#{<<"from">> => #{<<"username">> => BotNick, <<"language_code">> => ?LANG},
 					<<"message_id">> => MessageId,
 					<<"text">> => <<?NICK(AliceNick), AliceMsg/binary>>}},
 			TgReplyMsg = tg_message(ChatId, MessageId + 1, AliceNick, ReplyMsg, TgReply),
@@ -433,7 +435,7 @@ tg_message(Message, ChatId, MessageId, Username, Text, #{} = AddedMap) %% emulat
 			#{<<"first_name">> => Username,
 				<<"id">> => rand:uniform(10000000000),
 				<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
-				<<"language_code">> => <<"en">>,
+				<<"language_code">> => ?LANG,
 				<<"last_name">> => Username,
 				<<"username">> => Username},
 			<<"message_id">> => MessageId,
@@ -462,7 +464,7 @@ tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption) ->
 		 <<"from">> =>
 			#{<<"first_name">> => Username,
 				<<"id">> => rand:uniform(10000000000), <<"is_bot">> => false,
-				<<"language_code">> => <<"en">>,
+				<<"language_code">> => ?LANG,
 				<<"last_name">> => Username,
 				<<"username">> => Username},
 		<<"message_id">> => MessageId},
