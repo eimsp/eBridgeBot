@@ -169,12 +169,8 @@ pkt_fun(tag, PktFun, Tag) ->
 	fun(#message{} = Pkt, To) -> xmpp:set_subtag(PktFun(Pkt, To), Tag) end;
 pkt_fun(text, PktFun, Text) ->
 	fun(#message{} = Pkt, To) ->
-		case PktFun(Pkt, To) of
-			#message{body = [#text{data = OrigText}]} = Pkt2 ->
-				Pkt2#message{body = [#text{data = <<OrigText/binary, Text/binary>>}]};
-			#message{body = []} = Pkt2 ->
-				Pkt2#message{body = [#text{data = Text}]}
-		end
+		Pkt2 = #message{body = [#text{data = OrigText}]} = PktFun(Pkt, To),
+		Pkt2#message{body = [#text{data = <<OrigText/binary, Text/binary>>}]}
 	end.
 
 -spec fold_pkt_fun(list({type | from | tag | text, binary() | xmpp_element()}), function()) -> function().
@@ -184,6 +180,9 @@ fold_pkt_fun([{K, V} | T], PktFun) ->
 
 -spec send_to(pid() | term(), function(), binary(), atom(), term()) -> ok.
 send_to(Client, PktFun, To, BotId, Uid) ->
+	send_to(Client, PktFun, To, BotId, Uid, #message{body = [#text{}]}).
+-spec send_to(pid() | term(), function(), binary(), atom(), term(), xmpp_element()) -> ok.
+send_to(Client, PktFun, To, BotId, Uid, InitPkt) ->
 	Module = case is_pid(Client) of true -> escalus_component; _ -> escalus end,
-	Module:send(Client, xmpp:encode(#message{id = Id} = PktFun(#message{}, To))),
+	Module:send(Client, xmpp:encode(#message{id = Id} = PktFun(InitPkt, To))),
 	ebridgebot:write_link(BotId, Id, Uid).
