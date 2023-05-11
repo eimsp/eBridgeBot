@@ -45,8 +45,8 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	PktFun2 = ebridgebot:fold_pkt_fun([{from, ComponentJid}, {text, <<?NICK(TgUserName)>>}], PktFun),
 	handle_info(#telegram_update{msg = TgMsg, packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
-	#{ignore_commands := true} = State) -> %% TODO implement entities
-	?dbg("ignore commands from tg: ~p", [TgMsg]),
+	#{ignore_commands := true} = State) ->
+	?dbg("handle component: ignore commands from tg: ~p", [TgMsg]),
 	{ok, State};
 handle_info(#telegram_update{packet_fun = PktFun,
 							 msg = #{<<"chat">> := #{<<"type">> := Type} = Chat} = TgMsg} = TgUpd, Client, State)
@@ -54,6 +54,14 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	?dbg("telegram type only group or supergropu: ~p", [TgMsg]),
 	handle_info(TgUpd#telegram_update{packet_fun = ebridgebot:pkt_fun(type, PktFun, groupchat),
 									  msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
+handle_info(#telegram_update{packet_fun = PktFun,
+							 msg = #{<<"entities">> := Entities, <<"from">> := #{<<"username">> := TgUserName}} = TgMsg}, Client, State) ->
+	?dbg("handle component: entities: ~p", [TgMsg]),
+	NickOffset = byte_size(<<?NICK(TgUserName)>>),
+	Es = [#entity{offset = NickOffset + Offset, length = Length, type = binary_to_atom(Type)} ||
+		#{<<"offset">> := Offset, <<"length">> := Length, <<"type">> := Type} <- Entities],
+	PktFun2 = ebridgebot:pkt_fun(tag, PktFun, #entities{items = Es}),
+	handle_info(#telegram_update{msg = maps:remove(<<"entities">>, TgMsg), packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
 	%% TODO not implemented
