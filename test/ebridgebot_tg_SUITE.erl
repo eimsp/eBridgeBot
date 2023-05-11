@@ -396,7 +396,8 @@ reply_story(Config) ->
 			AliceReplyMsg = binary:replace(AliceMsg, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 			RepliedAliceText = <<$>, AliceNick/binary, "\n>", AliceReplyMsg/binary>>,
 			AliceFullReplyMsg = <<RepliedAliceText/binary, $\n, ReplyMsg/binary>>, %% message with fallback reply
-			AliceReplyPkt2 = DecodedPkt#message{body = [#text{data = AliceFullReplyMsg}],
+			AliceReplyPkt2 = DecodedPkt#message{
+				body = [#text{data = AliceFullReplyMsg}],
 				sub_els = [#origin_id{id = ReplyToId3 = ebridgebot:gen_uuid()},
 					#reply{id = OriginId, to = jid:decode(RoomJid)},
 					#fallback{body = [#fb_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}]}]},

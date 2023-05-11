@@ -97,13 +97,12 @@ handle_info(#telegram_update{packet_fun = PktFun,
 								    <<"reply_to_message">> :=
 										#{<<"from">> := #{<<"username">> := QuotedUser},
 										  <<"message_id">> := Id,
-										  <<"text">> := QuotedText},
-								    <<"text">> := Text} = TgMsg},
+										  <<"text">> := QuotedText}} = TgMsg},
 	Client, #{bot_id := BotId, nick := Nick} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
-	Text3 = <<RepliedText/binary, $\n, Text/binary>>,
+	Text3 = <<RepliedText/binary, $\n>>,
 	NickSize = byte_size(<<?NICK(TgUsername)>>),
 	PktFun2 =
 		case ebridgebot:index_read(BotId, #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
@@ -111,12 +110,16 @@ handle_info(#telegram_update{packet_fun = PktFun,
 				fun(Pkt, To) ->
 					ReplyTag = #reply{id = OriginId, to = jid:replace_resource(jid:decode(To), Nick)},
 					FallbackTag = #fallback{for = ?NS_REPLY, body = [#fb_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}]},
-					ReplyFun = ebridgebot:pkt_fun(tag, PktFun, [ReplyTag, FallbackTag]),
-					ReplyFun(Pkt, To)
+					(ebridgebot:fold_pkt_fun([{tag, [ReplyTag, FallbackTag]}, {text, Text3}], PktFun))(Pkt, To)
 				end;
 			[] -> PktFun
 		end,
-	handle_info(#telegram_update{msg = maps:remove(<<"reply_to_message">>, TgMsg#{<<"text">> => Text3}), packet_fun = PktFun2}, Client, State);
+	handle_info(#telegram_update{msg = maps:remove(<<"reply_to_message">>, TgMsg), packet_fun = PktFun2}, Client, State);
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := _ChatId}, <<"text">> := Text} = TgMsg, packet_fun = PktFun},
+	Client,	State) ->
+	?dbg("telegram_update: text: ~p", [TgMsg]),
+	PktFun2 = ebridgebot:pkt_fun(text, PktFun, Text),
+	handle_info(#telegram_update{msg = maps:remove(<<"text">>, TgMsg), packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"forward_from">> := #{<<"username">> := QuotedUser}, <<"text">> := Text} = TgMsg} = TgUpd, Client, State) ->
 	?dbg("telegram_update: forward_from: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"forward_from">>, TgMsg),
@@ -145,13 +148,13 @@ handle_info(#telegram_update{msg = TgMsg} = TgUpd, Client, State)
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2}, Client, State);
-handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := Id, <<"text">> := Text}, packet_fun = PktFun} = TgMsg,
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := ChatId}, <<"message_id">> := Id}, packet_fun = PktFun} = TgMsg,
 			Client,	#{bot_id := BotId, rooms := Rooms} = State) ->
 	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
 	ebridgebot:to_rooms(ChatId, Rooms,
 		fun(MucJid) ->
-			PktFun2 = ebridgebot:fold_pkt_fun([{text, Text}], PktFun),
-			ebridgebot:send_to(Client, PktFun2, MucJid, BotId, #tg_id{chat_id = ChatId, id = Id})
+%%			PktFun2 = ebridgebot:fold_pkt_fun([{text, Text}], PktFun),
+			ebridgebot:send_to(Client, PktFun, MucJid, BotId, #tg_id{chat_id = ChatId, id = Id})
 		end),
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{} = TgMsg}, Client, #{bot_name := BotName} = State) ->
