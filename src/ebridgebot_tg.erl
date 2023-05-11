@@ -119,11 +119,6 @@ handle_info(#telegram_update{packet_fun = PktFun,
 			[] -> PktFun
 		end,
 	handle_info(#telegram_update{msg = maps:remove(<<"reply_to_message">>, TgMsg), packet_fun = PktFun2}, Client, State);
-handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := _ChatId}, <<"text">> := Text} = TgMsg, packet_fun = PktFun},
-	Client,	State) ->
-	?dbg("telegram_update: text: ~p", [TgMsg]),
-	PktFun2 = ebridgebot:pkt_fun(text, PktFun, Text),
-	handle_info(#telegram_update{msg = maps:remove(<<"text">>, TgMsg), packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"forward_from">> := #{<<"username">> := QuotedUser}, <<"text">> := Text} = TgMsg} = TgUpd, Client, State) ->
 	?dbg("telegram_update: forward_from: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"forward_from">>, TgMsg),
@@ -137,6 +132,11 @@ handle_info(#telegram_update{msg = #{<<"sticker">> := Sticker} = TgMsg} = TgUpd,
 	?dbg("telegram_update: sticker without emoji: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"sticker">>, TgMsg),
 	handle_info(TgUpd#telegram_update{msg = TgMsg2#{<<"document">> => Sticker}}, Client, State);
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := _ChatId}, <<"text">> := Text} = TgMsg, packet_fun = PktFun},
+	Client,	State) ->
+	?dbg("telegram_update: text: ~p", [TgMsg]),
+	PktFun2 = ebridgebot:pkt_fun(text, PktFun, Text),
+	handle_info(#telegram_update{msg = maps:remove(<<"text">>, TgMsg), packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = TgMsg} = TgUpd, Client, State)
 	when is_map_key(<<"photo">>, TgMsg); is_map_key(<<"video">>, TgMsg); is_map_key(<<"audio">>, TgMsg); is_map_key(<<"voice">>, TgMsg) ->
 	?dbg("telegram_update: photo | video | audio | voice, ~p", [TgMsg]),
@@ -146,8 +146,7 @@ handle_info(#telegram_update{msg = TgMsg} = TgUpd, Client, State)
 				case maps:take(Key, Map) of
 					{[Doc | _], Map2} -> Map2#{<<"document">> => Doc};
 					{Doc, Map2} -> Map2#{<<"document">> => Doc};
-					_ ->
-						ReplaceFun(T, Map)
+					_ -> ReplaceFun(T, Map)
 				end
 		end,
 	TgMsg2 = ReplaceFun([<<"photo">>, <<"video">>, <<"audio">>, <<"voice">>], TgMsg),
@@ -156,10 +155,7 @@ handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := ChatId}, <<"mes
 			Client,	#{bot_id := BotId, rooms := Rooms} = State) ->
 	?dbg("telegram_update: msg to groupchat: ~p\n~p", [TgMsg, State]),
 	ebridgebot:to_rooms(ChatId, Rooms,
-		fun(MucJid) ->
-%%			PktFun2 = ebridgebot:fold_pkt_fun([{text, Text}], PktFun),
-			ebridgebot:send_to(Client, PktFun, MucJid, BotId, #tg_id{chat_id = ChatId, id = Id})
-		end),
+		fun(MucJid) -> ebridgebot:send_to(Client, PktFun, MucJid, BotId, #tg_id{chat_id = ChatId, id = Id}) end),
 	{ok, State};
 handle_info({pe4kin_update, BotName, #{} = TgMsg}, Client, #{bot_name := BotName} = State) ->
 	handle_info(#telegram_update{msg = TgMsg}, Client, State);
