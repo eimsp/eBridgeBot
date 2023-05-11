@@ -342,7 +342,7 @@ reply_story(Config) ->
 	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
 	[BotId, Pid, _Component, BotName, BotNick] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, bot_name, nick]],
 	escalus:story(Config, [{alice, 1}],
-		fun(#client{jid = AliceJid} = Alice) ->
+		fun(#client{jid = _AliceJid} = Alice) ->
 			DiscoInfoIq = #xmlel{attrs = Attrs} =
 				escalus_stanza:iq_get(?NS_DISCO_INFO, []),
 			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}),
@@ -427,48 +427,30 @@ tg_message(Message, ChatId, MessageId, Username, Text) ->
 	tg_message(Message, ChatId, MessageId, Username, Text, #{}).
 tg_message(Message, ChatId, MessageId, Username, Text, #{} = AddedMap) %% emulate Telegram message
 	when Message == <<"message">>; Message == <<"edited_message">> ->
-		#{Message =>
-		maps:merge(AddedMap, #{<<"chat">> =>
-		#{<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>, <<"type">> => <<"group">>},
+	Msg = #{<<"chat">> => #{<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>, <<"type">> => <<"group">>},
 			<<"date">> => erlang:system_time(second),
 			<<"from">> =>
-			#{<<"first_name">> => Username,
-				<<"id">> => rand:uniform(10000000000),
-				<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
-				<<"language_code">> => ?LANG,
-				<<"last_name">> => Username,
-				<<"username">> => Username},
-			<<"message_id">> => MessageId,
-			<<"text">> => Text}),
-			<<"update_id">> => rand:uniform(10000000000)}.
-%%	maps:merge(AddedMap, Msg).
+				#{<<"first_name">> => Username,
+					<<"id">> => rand:uniform(10000000000),
+					<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
+					<<"language_code">> => ?LANG,
+					<<"last_name">> => Username,
+					<<"username">> => Username},
+			<<"message_id">> => MessageId},
+	Msg2 = case is_binary(Text) of true -> Msg#{<<"text">> => Text}; _ -> Msg end,
+	#{Message => maps:merge(AddedMap, Msg2), <<"update_id">> => rand:uniform(10000000000)}.
 
 tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption) ->
 	UploadData = #{<<"file_id">> => ebridgebot:gen_uuid(), <<"file_size">> => FileSize},
-	{Type, Upload} =
+	UploadMap =
 		case hd(mimetypes:filename(Filename)) of
-			<<"audio/oga">> ->          {<<"voice">>, UploadData};
-			<<"audio/", _/binary>> ->   {<<"audio">>, UploadData};
-			<<"image/", _/binary>> ->   {<<"photo">>, lists:duplicate(3, UploadData)};
-			<<"video/", _/binary>> ->   {<<"video">>, UploadData};
-		_ ->                            {<<"document">>, UploadData}
+			<<"audio/oga">>         -> #{<<"voice">> => UploadData};
+			<<"audio/", _/binary>>  -> #{<<"audio">> => UploadData};
+			<<"image/", _/binary>>  -> #{<<"photo">> => lists:duplicate(3, UploadData)};
+			<<"video/", _/binary>>  -> #{<<"video">> => UploadData};
+			_                       -> #{<<"document">> => UploadData}
 		end,
-	#{<<"message">> =>
-		#{<<"caption">> => Caption,
-		  <<"chat">> =>
-			#{<<"all_members_are_administrators">> => true,
-				<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>,
-				<<"type">> => <<"group">>},
-			 <<"date">> => erlang:system_time(second),
-		 Type => Upload,
-		 <<"from">> =>
-			#{<<"first_name">> => Username,
-				<<"id">> => rand:uniform(10000000000), <<"is_bot">> => false,
-				<<"language_code">> => ?LANG,
-				<<"last_name">> => Username,
-				<<"username">> => Username},
-		<<"message_id">> => MessageId},
-		<<"update_id">> => rand:uniform(10000000000)}.
+	tg_message(ChatId, MessageId, Username, [], UploadMap#{<<"caption">> => Caption}).
 
 %% test API
 get_property(PropName, Proplist) ->
