@@ -66,13 +66,17 @@ handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMs
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
 	%% TODO not implemented
 	{ok, State};
+handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"id">> := _ChatId}, <<"caption">> := Caption} = TgMsg, packet_fun = PktFun},
+	Client,	State) ->
+	?dbg("telegram_update: caption: ~p", [TgMsg]),
+	PktFun2 = ebridgebot:pkt_fun(text, PktFun, <<Caption/binary, $\n>>),
+	handle_info(#telegram_update{msg = maps:remove(<<"caption">>, TgMsg), packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
 							 msg = #{<<"chat">> := #{<<"id">> := ChatId},
 									 <<"document">> := #{<<"file_id">> := FileId},
 									 <<"message_id">> := Id} = TgMsg}, Client,
 	#{bot_name := BotName, rooms := Rooms, component := Component, upload_host := UploadHost, upload := Upload} = State) ->
 	?dbg("telegram_update: upload: ~p", [TgMsg]),
-	Text = case maps:find(<<"caption">>, TgMsg) of {ok, V} -> <<V/binary, $\n>>; _ -> <<>> end,
 	case ebridgebot:to_rooms(ChatId, Rooms) of
 		[] -> {ok, State};
 		MucJids ->
@@ -89,7 +93,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 						file_path = FilePath,
 						muc_jids = MucJids,
 						uid = #tg_id{chat_id = ChatId, id = Id},
-						packet_fun = ebridgebot:pkt_fun(text, PktFun, Text)}}}}
+						packet_fun = PktFun}}}}
 	end;
 handle_info(#telegram_update{packet_fun = PktFun,
 							 msg = #{<<"chat">> := #{<<"id">> := ChatId},
