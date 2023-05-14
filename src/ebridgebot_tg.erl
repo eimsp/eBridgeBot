@@ -220,6 +220,8 @@ link_pred(#{group_id := ChatId}) -> %% filter link predicate
 	end.
 
 -spec msg_format(map()) -> map().
+msg_format(#{text := <<">", _/binary>> = Text, format := #{reply := ReplyType} = Format} = State) when not is_map_key(reply_to, State) ->
+	msg_format(State#{format => maps:remove(reply, Format), entities => [#{offset => 0, length => reply_entities(Text), type => ReplyType}]});
 msg_format(#{text := Text, usernick := Nick, format := Format, entities := Entities}) when is_list(Entities) ->
 	Nick2 = <<?NICK(Nick)>>,
 	Es2 =
@@ -228,6 +230,7 @@ msg_format(#{text := Text, usernick := Nick, format := Format, entities := Entit
 			_ -> []
 		end,
 	#{entities => Es2 ++ [Entity#{offset => byte_size(Nick2) + Offset} || #{offset := Offset} = Entity <- Entities], text => <<Nick2/binary, Text/binary>>};
+
 msg_format(#{text := Text, usernick := Nick, format := Format}) ->
 	{_, Es} =
 		lists:foldl(
@@ -241,3 +244,16 @@ msg_reply(#{} = Msg, #{chat_id := ChatId, reply_to := #tg_id{chat_id = ChatId, i
 	Msg#{reply_to_message_id => ReplyToId};
 msg_reply(Msg, _State) ->
 	Msg.
+
+reply_entities(Text) ->
+	reply_entities(Text, {$\n, 0}).
+reply_entities(<<>>, {_, N}) ->
+	N;
+reply_entities(<<$>, Text/binary>>, {$\n, N}) ->
+	reply_entities(Text, {$>, N + 1});
+reply_entities(<<$\n, Text/binary>>, {$>, N}) ->
+	reply_entities(Text, {$\n, N + 1});
+reply_entities(<<_/integer, Text/binary>>, {$>, N}) ->
+	reply_entities(Text, {$>, N + 1});
+reply_entities(<<_/integer, _Text/binary>>, {$\n, N}) ->
+	N.
