@@ -198,7 +198,7 @@ process_stanza(#bot{}, State) -> %% bot message from xmpp groupchat
 process_stanza(#entities{items = Entities}, [Pkt, State | TState]) -> %% entities from xmpp groupchat
 	?dbg("entities: ~p", [Pkt]),
 	NewState = State#{entities => [#{type => T, offset => Offset, length => Length}
-		|| #entity{type = T, offset = Offset, length = Length} <- ebridgebot:merge_entities(Entities)]},
+		|| #entity{type = T, offset = Offset, length = Length} <- Entities]},
 	stanza_decorator([#bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, NewState | TState]);
 process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, body = [#text{data = Text}]} = Pkt,
 		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid

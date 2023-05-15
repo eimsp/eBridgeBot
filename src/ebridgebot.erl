@@ -136,19 +136,19 @@ to_rooms(CurChatId, Rooms, Fun) ->
 	[Fun(MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
 
--spec merge_entities(list(entity())) -> list(entity()).
-merge_entities(Entities) ->
-	lists:flatten(tuple_to_list(
-		lists:foldl(
-			fun(#entity{} = E, {[], Acc}) ->
-					{E, Acc};
-				(#entity{offset = Offset, length = Length, type = Type},
-				 {#entity{offset = LastOffset, length = LastLength, type = Type} = E, Acc})
-					when LastOffset + LastLength == Offset ->
-					{E#entity{length = Offset + Length - LastOffset}, Acc};
-				(#entity{} = E, {#entity{} = E2, Acc}) ->
-					{E, Acc ++ [E2]}
-			end, {[], []}, Entities))).
+%%-spec merge_entities(list(entity())) -> list(entity()).
+%%merge_entities(Entities) ->
+%%	lists:flatten(tuple_to_list(
+%%		lists:foldl(
+%%			fun(#entity{} = E, {[], Acc}) ->
+%%					{E, Acc};
+%%				(#entity{offset = Offset, length = Length, type = Type},
+%%				 {#entity{offset = LastOffset, length = LastLength, type = Type} = E, Acc})
+%%					when LastOffset + LastLength == Offset ->
+%%					{E#entity{length = Offset + Length - LastOffset}, Acc};
+%%				(#entity{} = E, {#entity{} = E2, Acc}) ->
+%%					{E, Acc ++ [E2]}
+%%			end, {[], []}, Entities))).
 
 -spec pkt_fun() -> function().
 pkt_fun() ->
