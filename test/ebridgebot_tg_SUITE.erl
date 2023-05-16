@@ -13,7 +13,6 @@
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
--define(NS_MSG_MODERATE, <<"urn:xmpp:message-moderate:0">>).
 -define(CONTENT_TYPE, "image/png").
 -define(LANG, <<"en">>).
 
@@ -220,7 +219,7 @@ moderate_story(Config) ->
 				escalus_stanza:iq_get(?NS_DISCO_INFO, []),
 			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}),
 			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
-			true = lists:member(?NS_MSG_MODERATE, Features),
+			true = lists:member(?NS_MESSAGE_MODERATE, Features),
 
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
@@ -370,7 +369,7 @@ reply_story(Config) ->
 			State = ebridgebot_component:state(Pid),
 			#reply{id = OriginId} = xmpp:get_subtag(ReplyPkt = #message{body = [#text{data = ReplyText}]} =
 				xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
-			#fallback{body = [#fb_body{start = Start, 'end' = End}]} = xmpp:get_subtag(ReplyPkt, #fallback{}),
+			#feature_fallback{body = [#feature_fallback_body{start = Start, 'end' = End}]} = xmpp:get_subtag(ReplyPkt, #feature_fallback{}),
 			OriginalText = binary:part(ReplyText, Start, End - Start),
 			AliceMsg2 = binary:replace(<<?NICK(AliceNick), AliceMsg/binary>>, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 			OriginalText = <<$>, BotNick/binary, "\n>", AliceMsg2/binary>>,
@@ -401,10 +400,10 @@ reply_story(Config) ->
 				body = [#text{data = AliceFullReplyMsg}],
 				sub_els = [#origin_id{id = ReplyToId3 = ebridgebot:gen_uuid()},
 					#reply{id = OriginId, to = jid:decode(RoomJid)},
-					#fallback{body = [#fb_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}]}]},
+					#feature_fallback{body = [#feature_fallback_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}]}]},
 			meck:expect(ebridgebot_tg, send_message, send_message_fun(self())),
 			escalus:send(Alice, xmpp:encode(AliceReplyPkt2)),
-			#fallback{} = xmpp:get_subtag(ReplyFallbackPkt = xmpp:decode(escalus:wait_for_stanza(Alice)), #fallback{}),
+			#feature_fallback{} = xmpp:get_subtag(ReplyFallbackPkt = xmpp:decode(escalus:wait_for_stanza(Alice)), #feature_fallback{}),
 			#reply{} = xmpp:get_subtag(ReplyFallbackPkt, #reply{}),
 			[#xmpp_link{origin_id = ReplyToId3, uid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId3, #xmpp_link.origin_id) end, 1),

@@ -175,15 +175,15 @@ process_stanza(#reply{id = ReplyToId}, [Pkt = #message{body = [#text{data = Text
 	{NewState, Tags} =
 		case ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) of
 			[#xmpp_link{uid = Uid} | _] ->
-				{State#{reply_to => Uid}, [#fallback{}]};
+				{State#{reply_to => Uid}, [#feature_fallback{}]};
 			_ -> {State, []}
 		end,
 	stanza_decorator(Tags ++ [#replace{}, #origin_id{}], [Pkt, NewState#{text => Text} | TState]);
-process_stanza(#fallback{body = [#fb_body{start = Start, 'end' = End}]},
+process_stanza(#feature_fallback{body = [#feature_fallback_body{start = Start, 'end' = End}]},
 	[Pkt = #message{body = [#text{data = Text}]}, #{reply_to := _Uid} = State | TState]) -> %% fallback reply message from xmpp groupchat
 	?dbg("fallback: ~p", [Pkt]),
-	Text2 = case xmpp:get_subtag(Pkt, #fallback{}) of
-		        #fallback{body = [#fb_body{start = Start, 'end' = End}]} ->
+	Text2 = case xmpp:get_subtag(Pkt, #feature_fallback{}) of
+		        #feature_fallback{body = [#feature_fallback_body{start = Start, 'end' = End}]} ->
 			        iolist_to_binary([binary:part(Text, Pos, Len) || {Pos, Len} <- [{0, Start}, {End, byte_size(Text) - End}]]);
 		        _ -> Text
 	        end,
