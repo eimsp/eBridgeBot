@@ -147,7 +147,7 @@ process_stanza(#message{id = Id, from = #jid{resource = Nick}} = Pkt, Client, #{
 			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
 			_ -> Pkt
 		end,
-	stanza_decorator([#ps_event{}, #entities{}, #bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}],
+	stanza_decorator([#ps_event{}, #entities{}, #bot{}, #reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}],
 		[Pkt2, State#{usernick => Nick, entities => [], send_fun => send_message}, Client]),
 	{ok, State};
 process_stanza(Stanza, _Client, State) ->
@@ -190,26 +190,26 @@ process_stanza(#fallback{body = [#fb_body{start = Start, 'end' = End}]},
 	stanza_decorator([#replace{}, #origin_id{}], [Pkt#message{body = [#text{data = Text2}]}, State#{text => Text2} | TState]);
 process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | TState]) -> %% bot message format from xmpp groupchat
 	?dbg("bot format: ~p", [Pkt]),
-	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
+	stanza_decorator([#reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}],
 		[Pkt, State#{format => Format#{text => Type}, usernick => <<>>} | TState]);
 process_stanza(#bot{}, State) -> %% bot message from xmpp groupchat
 	?dbg("bot: ~p", [State]),
-	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], State);
+	stanza_decorator([#reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}], State);
 process_stanza(#entities{items = Entities}, [Pkt, State | TState]) -> %% entities from xmpp groupchat
 	?dbg("entities: ~p", [Pkt]),
 	NewState = State#{entities => [#{type => T, offset => Offset, length => Length}
 		|| #entity{type = T, offset = Offset, length = Length} <- Entities]},
-	stanza_decorator([#bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, NewState | TState]);
+	stanza_decorator([#bot{}, #reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}], [Pkt, NewState | TState]);
 process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, body = [#text{data = Text}]} = Pkt,
 		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
 	Module:edit_message(State#{uid => Uid, text => Text}),
 	ebridgebot:write_link(BotId, xmpp:get_subtag(Pkt, #origin_id{}), Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
 	{ok, State};
-process_stanza(#apply_to{sub_els = [#moderated{sub_els = [#retract{} | _]}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
+process_stanza(#fasten_apply_to{sub_els = [#moderated{sub_els = [#retract{} | _]}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
 	?dbg("moderator retract: ~p", [Pkt]),
-	process_stanza(#apply_to{sub_els = [#retract{}]}, Args);
-process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
+	process_stanza(#fasten_apply_to{sub_els = [#retract{}]}, Args);
+process_stanza(#fasten_apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
 	#{bot_id := BotId, module := Module} = State | _]) -> %% retract message from xmpp groupchat
 	?dbg("retract: ~p", [Pkt]),
 	Module:delete_message(State#{uid => Uid}),
@@ -217,11 +217,11 @@ process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = g
 	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- ebridgebot:index_read(BotId, Uid, #xmpp_link.uid)],
 	{ok, State};
 process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | TState] = Args)
-	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edited or moderated message from xmpp groupchat
+	when is_record(Tag, replace); is_record(Tag, fasten_apply_to) -> %% edited or moderated message from xmpp groupchat
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
 	MucFrom = jid:encode(jid:remove_resource(From)),
-	Id = element(#apply_to.id = #replace.id, Tag), %% #apply_to.id == #replace.id
-	Attr = case Tag of #apply_to{sub_els = [#moderated{}]} -> #xmpp_link.mam_id; _ -> #xmpp_link.origin_id end,
+	Id = element(#fasten_apply_to.id = #replace.id, Tag), %% #fasten_apply_to.id == #replace.id
+	Attr = case Tag of #fasten_apply_to{sub_els = [#moderated{}]} -> #xmpp_link.mam_id; _ -> #xmpp_link.origin_id end,
 	Links = ebridgebot:index_read(BotId, Id, Attr),
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid} | _] ->
