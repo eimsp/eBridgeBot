@@ -143,7 +143,7 @@ muc_story(Config) ->
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
 
 			AliceRetractPkt = #message{type = groupchat, to = RoomJID, %% retract from xmpp client
-				sub_els = [#origin_id{id = ebridgebot:gen_uuid()}, #fasten_apply_to{id = OriginId2, sub_els = [#retract{}]}]},
+				sub_els = [#origin_id{id = ebridgebot:gen_uuid()}, #fasten_apply_to{id = OriginId2, sub_els = [#message_retract{}]}]},
 			escalus:send(Alice, xmpp:encode(AliceRetractPkt)),
 			#fasten_apply_to{id = OriginId2} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #fasten_apply_to{}),
 			[] = wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid, #xmpp_link.uid) end),
@@ -241,13 +241,14 @@ moderate_story(Config) ->
 			AliceModerateIq =
 				#iq{type = set, from = jid:decode(AliceJid), to = RoomJID = jid:decode(RoomJid),
 					sub_els = [#fasten_apply_to{id = MamId2,
-						sub_els = [#moderate{
-							sub_els =
-						[#retract{}, #jingle_reason{text = [#text{data = <<"removed by admin">>}]}]}]}]},
+						sub_els = [#message_moderate{retract = #message_retract{}, reason = <<"removed by admin">>}
+%%							sub_els =
+%%						[#message_retract{}, #jingle_reason{text = [#text{data = <<"removed by admin">>}]}]
+				]}]},
 			escalus:send(Alice, xmpp:encode(AliceModerateIq)),
 			escalus:assert(is_iq_result, escalus:wait_for_stanza(Alice)),
 			RoomAliceNick = jid:replace_resource(RoomJID, AliceNick),
-			#fasten_apply_to{sub_els = [#moderated{by = RoomAliceNick}]} =
+			#fasten_apply_to{sub_els = [#message_moderated{by = RoomAliceNick}]} =
 				xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #fasten_apply_to{}),
 			[] = wait_for_list(fun() -> ebridgebot:index_read(BotId, MamId2, #xmpp_link.mam_id) end),
 			[_] = ebridgebot:index_read(BotId, MamId, #xmpp_link.mam_id),
