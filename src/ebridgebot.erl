@@ -68,7 +68,6 @@ wait_for_list(Fun, Length, Counter, Interval) when is_integer(Counter), is_integ
 	wait_for_result(Fun, PredFun, Counter, Interval).
 
 %% component help API
-
 -spec tag_decorator(list(xmpp_element()), list(xmpp_element() | list(any())), atom(), atom()) -> function().
 tag_decorator([], Data, Mod, Fun) ->
 	fun() -> Mod:Fun(Data) end;
@@ -101,12 +100,6 @@ password(#{type := Type, password := <<_/integer, _/binary>> = Pwd}) when Type =
 password(#{type := Type}) when Type == unsubscribe; Type == subscribe -> <<>>;
 password(_) -> undefined.
 
--spec edit_msg(jid(), jid(), binary(), binary()) -> message().
-edit_msg(From, To, Text, ReplaceId) ->
-	OriginId = ebridgebot:gen_uuid(),
-	#message{id = OriginId, type = groupchat, from = From, to = To, body = [#text{data = Text}],
-		sub_els = [#origin_id{id = OriginId}, #replace{id = ReplaceId}]}.
-
 -spec write_link(atom(), binary(), any()) -> ok.
 write_link(BotId, OriginId, Uid) ->
 	write_link(BotId, OriginId, Uid, []).
@@ -131,31 +124,69 @@ upd_links(BotId, OriginId, #mam_archived{id = MamId}) ->
 	Links = index_read(BotId, OriginId, #xmpp_link.origin_id),
 	[mnesia:dirty_write(setelement(1, Link#xmpp_link{mam_id = MamId}, Table)) || Link <- Links].
 
--spec index_read(binary(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
+-spec index_read(atom(), Key::term(), non_neg_integer()) -> list(#xmpp_link{}).
 index_read(BotId, Key, Attr) ->
 	[setelement(1, R, xmpp_link) || R <- mnesia:dirty_index_read(ebridgebot:bot_table(BotId), Key, Attr)].
 
--spec to_rooms(integer() | binary(), list(#muc_state{}), function()) -> list(any()).
+-spec to_rooms(integer() | binary(), list(#muc_state{})) -> list(function()).
+to_rooms(CurChatId, Rooms) ->
+	to_rooms(CurChatId, Rooms, fun(MucJid) -> MucJid end).
+-spec to_rooms(integer() | binary(), list(#muc_state{}), function()) -> list(function()).
 to_rooms(CurChatId, Rooms, Fun) ->
-	[Fun(ChatId, MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
+	[Fun(MucJid) || #muc_state{group_id = ChatId, muc_jid = MucJid, state = {E, S}} <- Rooms,
 		CurChatId == ChatId andalso (E == in orelse S == subscribed)].
 
--spec send(msg | edit_msg, pid() | {escalus | escalus_component, term()}, atom(), binary(), binary(), any(), binary(), binary()) -> ok.
-send(SendType, Pid, BotId, From, To, Uid, Nick, Text) when is_pid(Pid) ->
-	send(SendType, {escalus_component, Pid}, BotId, From, To, Uid, Nick, Text);
-send(msg, {Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
-	OriginId = ebridgebot:gen_uuid(),
-	Module:send(Client, xmpp:encode(#message{id = OriginId, type = groupchat, from = jid:decode(From), to = jid:decode(To),
-		body = [#text{data = <<Nick/binary, ":\n", Text/binary>>}], sub_els = [#origin_id{id = OriginId}]})),
-	ebridgebot:write_link(BotId, OriginId, Uid);
-send(edit_msg, {Module, Client}, BotId, From, To, Uid, Nick, Text) when Module == escalus; Module == escalus_component ->
-	case ebridgebot:index_read(BotId, Uid, #xmpp_link.uid) of
-		[#xmpp_link{origin_id = ReplaceId, uid = Uid} | _] ->
-			Pkt = #message{id = OriginId} = ebridgebot:edit_msg(jid:decode(From), jid:decode(To),
-				<<Nick/binary, ":\n", Text/binary>>, ReplaceId),
-			Module:send(Client, xmpp:encode(Pkt)),
-			ebridgebot:write_link(BotId, OriginId, Uid); %% TODO maybe you don't need to write because there is no retract from Telegram
-		_ -> ok
+%%-spec merge_entities(list(entity())) -> list(entity()).
+%%merge_entities(Entities) ->
+%%	lists:flatten(tuple_to_list(
+%%		lists:foldl(
+%%			fun(#entity{} = E, {[], Acc}) ->
+%%					{E, Acc};
+%%				(#entity{offset = Offset, length = Length, type = Type},
+%%				 {#entity{offset = LastOffset, length = LastLength, type = Type} = E, Acc})
+%%					when LastOffset + LastLength == Offset ->
+%%					{E#entity{length = Offset + Length - LastOffset}, Acc};
+%%				(#entity{} = E, {#entity{} = E2, Acc}) ->
+%%					{E, Acc ++ [E2]}
+%%			end, {[], []}, Entities))).
+
+-spec pkt_fun() -> function().
+pkt_fun() ->
+	fun(#message{} = Pkt, To) ->
+		Id = gen_uuid(),
+		xmpp:set_subtag(Pkt#message{id = Id, to = jid:decode(To)}, #origin_id{id = Id})
+	end.
+
+-spec pkt_fun(type | from | tag | text, function(), binary() | xmpp_element() | list(xmpp_element())) -> function().
+pkt_fun(type, PktFun, Type) ->
+	fun(Pkt, To) -> (PktFun(Pkt, To))#message{type = Type} end;
+pkt_fun(from, PktFun, From) ->
+	fun(Pkt, To) -> (PktFun(Pkt, To))#message{from = jid:decode(From)} end;
+pkt_fun(tag, PktFun, []) ->	PktFun;
+pkt_fun(tag, PktFun, [Tag | Tags]) ->
+	pkt_fun(tag, pkt_fun(tag, PktFun, Tag), Tags);
+pkt_fun(tag, PktFun, Tag) ->
+	fun(Pkt, To) -> xmpp:set_subtag(PktFun(Pkt, To), Tag) end;
+pkt_fun(lang, PktFun, Lang) ->
+	fun(#message{body = [Text = #text{}]} = Pkt, To) ->
+		PktFun(Pkt#message{body = [Text#text{lang = Lang}]}, To)
 	end;
-send(SendType, Client, BotId, From, To, Uid, Nick, Text) when SendType == msg; SendType == edit_msg ->
-	send(SendType, {escalus, Client}, BotId, From, To, Uid, Nick, Text).
+pkt_fun(text, PktFun, Text) ->
+	fun(Pkt, To) ->
+		Pkt2 = #message{body = [Txt = #text{data = OrigText}]} = PktFun(Pkt, To),
+		Pkt2#message{body = [Txt#text{data = <<OrigText/binary, Text/binary>>}]}
+	end.
+
+-spec fold_pkt_fun(list({type | from | tag | text, binary() | xmpp_element()}), function()) -> function().
+fold_pkt_fun([], PktFun) -> PktFun;
+fold_pkt_fun([{K, V} | T], PktFun) ->
+	fold_pkt_fun(T, pkt_fun(K, PktFun, V)).
+
+-spec send_to(pid() | term(), function(), binary(), atom(), term()) -> ok.
+send_to(Client, PktFun, To, BotId, Uid) ->
+	send_to(Client, PktFun, To, BotId, Uid, #message{body = [#text{}]}).
+-spec send_to(pid() | term(), function(), binary(), atom(), term(), xmpp_element()) -> ok.
+send_to(Client, PktFun, To, BotId, Uid, InitPkt) ->
+	Module = case is_pid(Client) of true -> escalus_component; _ -> escalus end,
+	Module:send(Client, xmpp:encode(#message{id = Id} = PktFun(InitPkt, To))),
+	ebridgebot:write_link(BotId, Id, Uid).

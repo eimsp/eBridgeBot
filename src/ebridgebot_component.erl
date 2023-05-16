@@ -15,7 +15,7 @@ start_link(Args) ->
 
 init(Args) ->
 	?dbg("~p: init with args: ~p", [?MODULE, Args]),
-	DefaultState = #{rooms => [], upload_host => <<"upload.localhost">>, upload_endpoint => undefined, format => #{}},
+	DefaultState = #{rooms => [], upload_host => <<"upload.localhost">>, format => #{}},
 	State = #{rooms := Rooms, bot_id := BotId, module := Module} = maps:merge(DefaultState, Args),
 	LinkedRooms = [#muc_state{group_id = TgId, muc_jid = string:lowercase(MucJid), password = case MucMap of #{password := P} -> P; _-> undefined end}
 		|| {TgId, #{jid := MucJid} = MucMap} <- Rooms],
@@ -107,8 +107,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 		_Client,
 		#{bot_id := BotId, module := Module, component := ComponentJid, upload_host := UploadHost, upload := Upload} = State)
 	when is_map_key(FileId, Upload) ->
-	#{FileId := #upload_info{nick = Nick, content_type = ContentType, file_path = FilePath,
-		muc_jids = RoomJids, caption = Caption, uid = Uid, send_type = SendType}} = Upload,
+	#{FileId := #upload_info{content_type = ContentType, file_path = FilePath, muc_jids = RoomJids, uid = Uid, packet_fun = PktFun}} = Upload,
 	?dbg("upload slot: ~p", [IQ]),
 	Pid = self(),
 	spawn( %% async get and put data
@@ -117,7 +116,7 @@ process_stanza(#iq{id = FileId, type = result, from = #jid{server = UploadHost},
 				{ok, Data} = Module:get_file(State#{file_path => FilePath}), %% TODO set get_file more universal
 				{ok, {{"HTTP/1.1", 201, _}, _, _}} =
 					httpc:request(put, {binary_to_list(PutURL), [], binary_to_list(ContentType), Data}, [], []),
-				[ebridgebot:send(SendType, Pid, BotId, ComponentJid, MucJid, Uid, Nick, <<Caption/binary, GetURL/binary>>) || MucJid <- RoomJids]
+				[ebridgebot:send_to(Pid, ebridgebot:pkt_fun(text, PktFun, GetURL), MucJid, BotId, Uid) || MucJid <- RoomJids]
 			catch
 				E : R ->
 					?err("ERROR:~p: ~p", [E, R])
@@ -142,8 +141,15 @@ process_stanza(#presence{type = Type, from = #jid{} = CurMucJID, to = #jid{serve
 		_ ->
 			{ok, State}
 	end;
-process_stanza(#message{} = Pkt, Client, #{} = State) ->
-	(ebridgebot:tag_decorator([#ps_event{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, State, Client], ?MODULE, process_stanza))();
+process_stanza(#message{id = Id, from = #jid{resource = Nick}} = Pkt, Client, #{} = State) ->
+	Pkt2 =
+		case xmpp:get_subtag(Pkt, #origin_id{}) of
+			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
+			_ -> Pkt
+		end,
+	stanza_decorator([#ps_event{}, #entities{}, #bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}],
+		[Pkt2, State#{usernick => Nick, entities => [], send_fun => send_message}, Client]),
+	{ok, State};
 process_stanza(Stanza, _Client, State) ->
 	%% Here you can implement the processing of the Stanza and
 	%% change the State accordingly
@@ -159,17 +165,46 @@ process_stanza(#ps_event{} = Event,	[#message{} = _Pkt, #{} = State | _]) ->
 	?dbg("handle event message: ~p", [Event]),
 	%% TODO not implemented
 	{ok, State};
-process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat} = Pkt, #{bot_id := BotId} = State | _]) ->
+process_stanza(#origin_id{id = OriginId}, [#message{type = groupchat, body = [#text{data = Text}]} = Pkt, #{bot_id := BotId} = State | TState]) ->
 	case ebridgebot:upd_links(BotId, OriginId, xmpp:get_subtag(Pkt, #mam_archived{})) of
 		[_ | _] -> {ok, State}; %% not send to third party client if messages already linked
-		[] -> process_stanza([Pkt, State])
+		[] -> process_stanza([Pkt, State#{text => Text} | TState])
 	end;
-process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, from = #jid{resource = Nick}, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
+process_stanza(#reply{id = ReplyToId}, [Pkt = #message{body = [#text{data = Text}]}, #{bot_id := BotId} = State | TState]) -> %% reply message from xmpp groupchat
+	?dbg("reply: ~p", [Pkt]),
+	{NewState, Tags} =
+		case ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) of
+			[#xmpp_link{uid = Uid} | _] ->
+				{State#{reply_to => Uid}, [#fallback{}]};
+			_ -> {State, []}
+		end,
+	stanza_decorator(Tags ++ [#replace{}, #origin_id{}], [Pkt, NewState#{text => Text} | TState]);
+process_stanza(#fallback{body = [#fb_body{start = Start, 'end' = End}]},
+	[Pkt = #message{body = [#text{data = Text}]}, #{reply_to := _Uid} = State | TState]) -> %% fallback reply message from xmpp groupchat
+	?dbg("fallback: ~p", [Pkt]),
+	Text2 = case xmpp:get_subtag(Pkt, #fallback{}) of
+		        #fallback{body = [#fb_body{start = Start, 'end' = End}]} ->
+			        iolist_to_binary([binary:part(Text, Pos, Len) || {Pos, Len} <- [{0, Start}, {End, byte_size(Text) - End}]]);
+		        _ -> Text
+	        end,
+	stanza_decorator([#replace{}, #origin_id{}], [Pkt#message{body = [#text{data = Text2}]}, State#{text => Text2} | TState]);
+process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | TState]) -> %% bot message format from xmpp groupchat
+	?dbg("bot format: ~p", [Pkt]),
+	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}],
+		[Pkt, State#{format => Format#{text => Type}, usernick => <<>>} | TState]);
+process_stanza(#bot{}, State) -> %% bot message from xmpp groupchat
+	?dbg("bot: ~p", [State]),
+	stanza_decorator([#reply{}, #replace{}, #apply_to{}, #origin_id{}], State);
+process_stanza(#entities{items = Entities}, [Pkt, State | TState]) -> %% entities from xmpp groupchat
+	?dbg("entities: ~p", [Pkt]),
+	NewState = State#{entities => [#{type => T, offset => Offset, length => Length}
+		|| #entity{type = T, offset = Offset, length = Length} <- Entities]},
+	stanza_decorator([#bot{}, #reply{}, #replace{}, #apply_to{}, #origin_id{}], [Pkt, NewState | TState]);
+process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, body = [#text{data = Text}]} = Pkt,
+		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid
 	?dbg("replace: ~p", [Pkt]),
-	#origin_id{id = OriginId} = xmpp:get_subtag(Pkt, #origin_id{}),
-	Module:edit_message(State#{uid => Uid, text => Text, usernick => Nick}),
-	ebridgebot:write_link(BotId, OriginId, Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
+	Module:edit_message(State#{uid => Uid, text => Text}),
+	ebridgebot:write_link(BotId, xmpp:get_subtag(Pkt, #origin_id{}), Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
 	{ok, State};
 process_stanza(#apply_to{sub_els = [#moderated{sub_els = [#retract{} | _]}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
 	?dbg("moderator retract: ~p", [Pkt]),
@@ -181,7 +216,7 @@ process_stanza(#apply_to{sub_els = [#retract{}]}, [{uid, Uid}, #message{type = g
 	Table = ebridgebot:bot_table(BotId),
 	[mnesia:dirty_delete(Table, TimeId) || #xmpp_link{time = TimeId} <- ebridgebot:index_read(BotId, Uid, #xmpp_link.uid)],
 	{ok, State};
-process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | _] = Args)
+process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{bot_id := BotId, rooms := Rooms, module := Module} = State | TState] = Args)
 	when is_record(Tag, replace); is_record(Tag, apply_to) -> %% edited or moderated message from xmpp groupchat
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
 	MucFrom = jid:encode(jid:remove_resource(From)),
@@ -192,7 +227,8 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 		 [#xmpp_link{uid = Uid} | _] ->
 			 process_stanza(Tag, [{uid, Uid} | Args]);
 		 [] when is_record(Tag, replace) ->
-			 process_stanza(xmpp:get_subtag(Pkt, #origin_id{}), Args); %% send new message if the replaced message does not exist
+			 #message{body = [#text{data = Text}]} = Pkt,
+			 process_stanza(xmpp:get_subtag(Pkt, #origin_id{}), [Pkt, State#{text => Text} | TState]); %% send new message if the replaced message does not exist
 		 [] -> ok
 	 end || #muc_state{muc_jid = MucJid, group_id = ChatId} <- Rooms, MucFrom == MucJid],
 	{ok, State};
@@ -200,25 +236,24 @@ process_stanza(_, [#message{} = Pkt | _] = StateList) ->
 	?dbg("msg without origin id: ~p", [Pkt]),
 	process_stanza(StateList).
 
-process_stanza([#message{type = groupchat, from = #jid{resource = Nick} = From, body = [#text{data = Text}]} = Pkt,
-	#{bot_id := BotId, rooms := Rooms, module := Module, upload_endpoint := UploadEndpoint, format := Format} = State | _]) ->
+process_stanza([#message{type = groupchat, from = #jid{resource = Nick}} = Pkt,	#{upload_endpoint := UploadEndpoint, text := Text} = State | TState]) ->
+	?dbg("upload to third party client: ~p", [Pkt]),
+	NewState =
+		case binary:match(Text, [UploadEndpoint]) of
+			nomatch -> State;
+			_ -> %% TODO if endpoint path has port then tg does not allow upload
+				State#{send_fun => send_data,
+						mime => hd(mimetypes:filename(Text)),
+						file_uri => Text,
+						caption => <<Nick/binary, ":">>}
+		end,
+	process_stanza([Pkt, maps:remove(upload_endpoint, NewState) | TState]);
+process_stanza([#message{type = groupchat, from = From} = Pkt,
+	#{bot_id := BotId, rooms := Rooms, module := Module, send_fun := SendFun, text := _} = State | _]) ->
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	?dbg("send to third party client: ~p", [Pkt]),
-	{Fun, TmpState} =
-		case catch binary:match(Text, [UploadEndpoint]) of
-			Found when is_binary(UploadEndpoint), Found /= nomatch -> %% TODO if endpoint path has port then tg does not allow upload
-				{send_data, State#{mime => hd(mimetypes:filename(Text)), file_uri => Text, caption => <<Nick/binary, ":">>}};
-			_ ->
-				{send_message, State#{text => Text, usernick => Nick}}
-		end,
-	TmpState2 = %% if system message
-		case {xmpp:get_subtag(Pkt, #bot{}), Format} of
-			{#bot{}, #{system := Type}} when Nick == <<"system">> ->
-				TmpState#{format => Format#{text => Type}};
-			_ -> TmpState
-		end,
 	[OriginTag, MamArchivedTag] = [xmpp:get_subtag(Pkt, Tag) || Tag <- [#origin_id{}, #mam_archived{}]],
-	[case Module:Fun(TmpState2#{chat_id => ChatId}) of
+	[case Module:SendFun(State#{chat_id => ChatId}) of
 		 {ok, Uid} ->
 			 ebridgebot:write_link(BotId, OriginTag, Uid, MamArchivedTag);
 		 Err -> Err
@@ -263,3 +298,6 @@ filter_pred(#{component := Component, nick := ComponentNick}) -> %% filter echo 
 			end;
 		(_) -> true
 	end.
+
+stanza_decorator(Tags, S) ->
+	(ebridgebot:tag_decorator(Tags, S, ?MODULE, process_stanza))().
