@@ -147,7 +147,7 @@ process_stanza(#message{id = Id, from = #jid{resource = Nick}} = Pkt, Client, #{
 			false -> xmpp:set_subtag(Pkt, #origin_id{id = Id});
 			_ -> Pkt
 		end,
-	stanza_decorator([#ps_event{}, #entities{}, #bot{}, #reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}],
+	stanza_decorator([#ps_event{}, #message_entities{}, #bot{}, #reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}],
 		[Pkt2, State#{usernick => Nick, entities => [], send_fun => send_message}, Client]),
 	{ok, State};
 process_stanza(Stanza, _Client, State) ->
@@ -195,10 +195,10 @@ process_stanza(#bot{}, [Pkt, #{format := #{system := Type} = Format} = State | T
 process_stanza(#bot{}, State) -> %% bot message from xmpp groupchat
 	?dbg("bot: ~p", [State]),
 	stanza_decorator([#reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}], State);
-process_stanza(#entities{items = Entities}, [Pkt, State | TState]) -> %% entities from xmpp groupchat
+process_stanza(#message_entities{items = Entities}, [Pkt, State | TState]) -> %% entities from xmpp groupchat
 	?dbg("entities: ~p", [Pkt]),
 	NewState = State#{entities => [#{type => T, offset => Offset, length => Length}
-		|| #entity{type = T, offset = Offset, length = Length} <- Entities]},
+		|| #message_entity{type = T, offset = Offset, length = Length} <- Entities]},
 	stanza_decorator([#bot{}, #reply{}, #replace{}, #fasten_apply_to{}, #origin_id{}], [Pkt, NewState | TState]);
 process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, body = [#text{data = Text}]} = Pkt,
 		#{bot_id := BotId, module := Module} = State | _]) -> %% edit message from xmpp groupchat with uid

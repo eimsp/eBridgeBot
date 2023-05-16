@@ -58,9 +58,9 @@ handle_info(#telegram_update{packet_fun = PktFun,
 							 msg = #{<<"entities">> := Entities, <<"from">> := #{<<"username">> := TgUserName}} = TgMsg}, Client, State) ->
 	?dbg("handle component: entities: ~p", [TgMsg]),
 	NickOffset = byte_size(<<?NICK(TgUserName)>>),
-	Es = [#entity{offset = NickOffset + Offset, length = Length, type = binary_to_atom(Type)} ||
+	Es = [#message_entity{offset = NickOffset + Offset, length = Length, type = binary_to_atom(Type)} ||
 		#{<<"offset">> := Offset, <<"length">> := Length, <<"type">> := Type} <- Entities],
-	PktFun2 = ebridgebot:pkt_fun(tag, PktFun, #entities{items = Es}),
+	PktFun2 = ebridgebot:pkt_fun(tag, PktFun, #message_entities{items = Es}),
 	handle_info(#telegram_update{msg = maps:remove(<<"entities">>, TgMsg), packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"chat">> := #{<<"type">> := Type}} = TgMsg}, _Client, State) ->
 	?dbg("ignore ~s telegram type for\n~p", [Type, TgMsg]),
