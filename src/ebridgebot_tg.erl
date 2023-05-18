@@ -113,7 +113,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 			[#xmpp_link{origin_id = OriginId} | _] -> %% TODO solve many to many problem!
 				fun(Pkt, To) ->
 					ReplyTag = #reply{id = OriginId, to = jid:replace_resource(jid:decode(To), Nick)},
-					FallbackTag = #feature_fallback{for = ?NS_REPLY, body = [#feature_fallback_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}]},
+					FallbackTag = #feature_fallback{for = ?NS_REPLY, body = #feature_fallback_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}},
 					(ebridgebot:fold_pkt_fun([{tag, [ReplyTag, FallbackTag]}, {text, Text3}], PktFun))(Pkt, To)
 				end;
 			[] -> PktFun

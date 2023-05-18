@@ -369,7 +369,7 @@ reply_story(Config) ->
 			State = ebridgebot_component:state(Pid),
 			#reply{id = OriginId} = xmpp:get_subtag(ReplyPkt = #message{body = [#text{data = ReplyText}]} =
 				xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
-			#feature_fallback{body = [#feature_fallback_body{start = Start, 'end' = End}]} = xmpp:get_subtag(ReplyPkt, #feature_fallback{}),
+			#feature_fallback{body = #feature_fallback_body{start = Start, 'end' = End}} = xmpp:get_subtag(ReplyPkt, #feature_fallback{}),
 			OriginalText = binary:part(ReplyText, Start, End - Start),
 			AliceMsg2 = binary:replace(<<?NICK(AliceNick), AliceMsg/binary>>, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
 			OriginalText = <<$>, BotNick/binary, "\n>", AliceMsg2/binary>>,
@@ -400,7 +400,7 @@ reply_story(Config) ->
 				body = [#text{data = AliceFullReplyMsg}],
 				sub_els = [#origin_id{id = ReplyToId3 = ebridgebot:gen_uuid()},
 					#reply{id = OriginId, to = jid:decode(RoomJid)},
-					#feature_fallback{body = [#feature_fallback_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}]}]},
+					#feature_fallback{body = #feature_fallback_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}}]},
 			meck:expect(ebridgebot_tg, send_message, send_message_fun(self())),
 			escalus:send(Alice, xmpp:encode(AliceReplyPkt2)),
 			#feature_fallback{} = xmpp:get_subtag(ReplyFallbackPkt = xmpp:decode(escalus:wait_for_stanza(Alice)), #feature_fallback{}),
