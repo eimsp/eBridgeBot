@@ -150,7 +150,8 @@ muc_story(Config) ->
 
 			TgAliceMsg = <<"Hello from telegram!">>, TgAliceMsg2 = <<"2: Hello from telegram!">>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
-			escalus:assert(is_groupchat_message, [<<?NICK(AliceNick), TgAliceMsg/binary>>], FromTgAlicePkt = escalus:wait_for_stanza(Alice)),
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), TgAliceMsg/binary>>], FromTgAlicePkt = escalus:wait_for_stanza(Alice)),
 			#message{body = [#text{lang = ?LANG}]} = xmpp:decode(FromTgAlicePkt),
 			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2, mam_id = MamId2}] =
@@ -160,7 +161,7 @@ muc_story(Config) ->
 
 			%% emulate editing message from Telegram
 			Pid ! {pe4kin_update, BotName, tg_message(<<"edited_message">>, ChatId, MessageId + 1, AliceNick, TgAliceMsg2)},
-			escalus:assert(is_groupchat_message, [<<?NICK(AliceNick), TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
 			ok
@@ -193,8 +194,9 @@ subscribe_muc_story(Config) ->
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 			true = is_binary(MamId),
 			TgAliceMsg = <<"Hello from telegram!">>,
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
-			escalus:assert(is_groupchat_message, [<<?NICK(AliceNick), TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2, mam_id = _MamId2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
@@ -235,7 +237,8 @@ moderate_story(Config) ->
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, ComponentMsg)}, %% emulate sending message from Telegram
-			escalus:assert(is_groupchat_message, [<<?NICK(AliceNick), ComponentMsg/binary>>], Pkt = escalus:wait_for_stanza(Alice)),
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), ComponentMsg/binary>>], Pkt = escalus:wait_for_stanza(Alice)),
 			#mam_archived{id = MamId2} = xmpp:get_subtag(xmpp:decode(Pkt), #mam_archived{}),
 			AliceModerateIq =
 				#iq{type = set, from = jid:decode(AliceJid), to = RoomJID = jid:decode(RoomJid),
@@ -319,7 +322,7 @@ upload_story(Config) ->
 				 meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
 				 meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
 				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
-				 #message{id = OriginId, body = [#text{data = <<"from test_bot_tg\n\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+				 #message{id = OriginId, body = [#text{data = <<"from test_bot_tg test_bot_tg\n\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 				 ct:comment("received link message: ~s", [Url]),
 				 {ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 					 wait_for_result(fun() ->
@@ -360,7 +363,7 @@ reply_story(Config) ->
 
 			TgReply =
 				#{<<"reply_to_message">> =>
-				#{<<"from">> => #{<<"username">> => BotNick, <<"language_code">> => ?LANG},
+				#{<<"from">> => #{<<"first_name">> => BotNick, <<"language_code">> => ?LANG},
 					<<"message_id">> => MessageId,
 					<<"text">> => <<?NICK(AliceNick), AliceMsg/binary>>}},
 			TgReplyMsg = tg_message(ChatId, MessageId + 1, AliceNick, ReplyMsg, TgReply),
@@ -435,6 +438,7 @@ tg_message(Message, ChatId, MessageId, Username, Text, #{} = AddedMap) %% emulat
 					<<"id">> => rand:uniform(10000000000),
 					<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
 					<<"language_code">> => ?LANG,
+					<<"first_name">> => Username,
 					<<"last_name">> => Username,
 					<<"username">> => Username},
 			<<"message_id">> => MessageId},
