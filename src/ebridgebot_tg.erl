@@ -95,6 +95,10 @@ handle_info(#telegram_update{packet_fun = PktFun,
 						uid = #tg_id{chat_id = ChatId, id = Id},
 						packet_fun = PktFun}}}}
 	end;
+handle_info(#telegram_update{msg =
+		#{<<"reply_to_message">> := #{<<"from">> := #{<<"username">> := BotName, <<"is_bot">> := true} = From} = ReplyMsg} = TgMsg} = TgUpd,
+	Client, #{bot_name := BotName} = State) ->
+	handle_info(TgUpd#telegram_update{msg = TgMsg#{<<"reply_to_message">> => ReplyMsg#{<<"from">> => From#{<<"username">> => <<>>}}}}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
 							 msg = #{<<"chat">> := #{<<"id">> := ChatId},
 								    <<"from">> := #{<<"username">> := TgUsername},
@@ -105,7 +109,8 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	Client, #{bot_id := BotId, nick := Nick} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
-	RepliedText = <<$>, QuotedUser/binary, "\n>", Text2/binary>>,
+	QuotedUser2 = case QuotedUser of <<>> -> <<>>; _ -> <<$>, QuotedUser/binary>> end,
+	RepliedText = <<QuotedUser2/binary, "\n>", Text2/binary>>,
 	Text3 = <<RepliedText/binary, $\n>>,
 	NickSize = byte_size(<<?NICK(TgUsername)>>),
 	PktFun2 =
