@@ -39,9 +39,10 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	handle_info(#telegram_update{packet_fun = NewPktFun,
 								 msg = maps:remove(<<"edited_message">>, EditMsg#{<<"message">> => TgMsg})}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
-							 msg = #{<<"message">> := #{<<"from">> := #{<<"username">> := TgUserName, <<"language_code">> := Lang}} = TgMsg}},
+							 msg = #{<<"message">> := #{<<"from">> := #{<<"language_code">> := Lang} = From} = TgMsg}},
 		Client, #{component := ComponentJid} = State) ->
 	?dbg("handle component: message: ~p", [TgMsg]),
+	TgUserName = user_name(From),
 	PktFun2 = ebridgebot:fold_pkt_fun([{lang, Lang}, {from, ComponentJid}, {text, <<?NICK(TgUserName)>>}], PktFun),
 	handle_info(#telegram_update{msg = TgMsg, packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
@@ -55,8 +56,9 @@ handle_info(#telegram_update{packet_fun = PktFun,
 	handle_info(TgUpd#telegram_update{packet_fun = ebridgebot:pkt_fun(type, PktFun, groupchat),
 									  msg = TgMsg#{<<"chat">> => maps:remove(<<"type">>, Chat)}}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
-							 msg = #{<<"entities">> := Entities, <<"from">> := #{<<"username">> := TgUserName}} = TgMsg}, Client, State) ->
+							 msg = #{<<"entities">> := Entities, <<"from">> := From} = TgMsg}, Client, State) ->
 	?dbg("handle component: entities: ~p", [TgMsg]),
+	TgUserName = user_name(From),
 	NickOffset = byte_size(<<?NICK(TgUserName)>>),
 	Es = [#message_entity{offset = NickOffset + Offset, length = Length, type = binary_to_atom(Type)} ||
 		#{<<"offset">> := Offset, <<"length">> := Length, <<"type">> := Type} <- Entities],
@@ -96,20 +98,21 @@ handle_info(#telegram_update{packet_fun = PktFun,
 						packet_fun = PktFun}}}}
 	end;
 handle_info(#telegram_update{msg =
-		#{<<"reply_to_message">> := #{<<"from">> := #{<<"username">> := BotName, <<"is_bot">> := true} = From} = ReplyMsg} = TgMsg} = TgUpd,
+		#{<<"reply_to_message">> := #{<<"from">> := #{<<"first_name">> := BotName, <<"is_bot">> := true} = From} = ReplyMsg} = TgMsg} = TgUpd,
 	Client, #{bot_name := BotName} = State) ->
-	handle_info(TgUpd#telegram_update{msg = TgMsg#{<<"reply_to_message">> => ReplyMsg#{<<"from">> => From#{<<"username">> => <<>>}}}}, Client, State);
+	handle_info(TgUpd#telegram_update{msg = TgMsg#{<<"reply_to_message">> => ReplyMsg#{<<"from">> => From#{<<"user_name">> => <<>>}}}}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
 							 msg = #{<<"chat">> := #{<<"id">> := ChatId},
-								    <<"from">> := #{<<"username">> := TgUsername},
+								    <<"from">> := From,
 								    <<"reply_to_message">> :=
-										#{<<"from">> := #{<<"username">> := QuotedUser},
+										#{<<"from">> := ReplyFrom,
 										  <<"message_id">> := Id,
 										  <<"text">> := QuotedText}} = TgMsg},
 	Client, #{bot_id := BotId, nick := Nick} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
+	TgUsername = user_name(From),
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
-	QuotedUser2 = case QuotedUser of <<>> -> <<>>; _ -> <<$>, QuotedUser/binary>> end,
+	QuotedUser2 = case user_name(ReplyFrom) of <<>> -> <<>>; QuotedUser -> <<$>, QuotedUser/binary>> end,
 	RepliedText = <<QuotedUser2/binary, "\n>", Text2/binary>>,
 	Text3 = <<RepliedText/binary, $\n>>,
 	NickSize = byte_size(<<?NICK(TgUsername)>>),
@@ -124,9 +127,10 @@ handle_info(#telegram_update{packet_fun = PktFun,
 			[] -> PktFun
 		end,
 	handle_info(#telegram_update{msg = maps:remove(<<"reply_to_message">>, TgMsg), packet_fun = PktFun2}, Client, State);
-handle_info(#telegram_update{msg = #{<<"forward_from">> := #{<<"username">> := QuotedUser}, <<"text">> := Text} = TgMsg} = TgUpd, Client, State) ->
+handle_info(#telegram_update{msg = #{<<"forward_from">> := ForwardFrom, <<"text">> := Text} = TgMsg} = TgUpd, Client, State) ->
 	?dbg("telegram_update: forward_from: ~p", [TgMsg]),
 	TgMsg2 = maps:remove(<<"forward_from">>, TgMsg),
+	QuotedUser = user_name(ForwardFrom),
 	Text2 = <<$>, QuotedUser/binary, ":\n", Text/binary>>,
 	handle_info(TgUpd#telegram_update{msg = TgMsg2#{<<"text">> := Text2}}, Client, State);
 handle_info(#telegram_update{msg = #{<<"sticker">> := #{<<"emoji">> := Emoji}} = TgMsg} = TgUpd, Client, State) ->
@@ -262,3 +266,9 @@ reply_offset(<<_/integer, Text/binary>>, {$>, N}) ->
 	reply_offset(Text, {$>, N + 1});
 reply_offset(<<_/integer, _Text/binary>>, {$\n, N}) ->
 	N.
+
+user_name(#{<<"first_name">> := FirstName, <<"last_name">> := LastName}) ->
+	<<FirstName/binary, " ", LastName/binary>>;
+user_name(#{<<"first_name">> := FirstName}) ->
+	FirstName.
+
