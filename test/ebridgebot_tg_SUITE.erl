@@ -429,18 +429,21 @@ tg_message(ChatId, MessageId, Username, Text, #{} = AddedMap) when is_integer(Ch
 	tg_message(<<"message">>, ChatId, MessageId, Username, Text, AddedMap);
 tg_message(Message, ChatId, MessageId, Username, Text) ->
 	tg_message(Message, ChatId, MessageId, Username, Text, #{}).
-tg_message(Message, ChatId, MessageId, Username, Text, #{} = AddedMap) %% emulate Telegram message
+tg_message(Message, ChatId, MessageId, Username, Text, AddedMap)
+	when is_binary(Username) andalso (Message == <<"message">> orelse Message == <<"edited_message">>) ->
+	From = #{<<"first_name">> => Username,
+		<<"id">> => rand:uniform(10000000000),
+		<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
+		<<"language_code">> => ?LANG,
+		<<"first_name">> => Username,
+		<<"last_name">> => Username,
+		<<"username">> => Username},
+	tg_message(Message, ChatId, MessageId, From, Text, AddedMap);
+tg_message(Message, ChatId, MessageId, #{} = From, Text, #{} = AddedMap) %% emulate Telegram message
 	when Message == <<"message">>; Message == <<"edited_message">> ->
 	Msg = #{<<"chat">> => #{<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>, <<"type">> => <<"group">>},
 			<<"date">> => erlang:system_time(second),
-			<<"from">> =>
-				#{<<"first_name">> => Username,
-					<<"id">> => rand:uniform(10000000000),
-					<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
-					<<"language_code">> => ?LANG,
-					<<"first_name">> => Username,
-					<<"last_name">> => Username,
-					<<"username">> => Username},
+			<<"from">> => From,
 			<<"message_id">> => MessageId},
 	Msg2 = case is_binary(Text) of true -> Msg#{<<"text">> => Text}; _ -> Msg end,
 	#{Message => maps:merge(AddedMap, Msg2), <<"update_id">> => rand:uniform(10000000000)}.
