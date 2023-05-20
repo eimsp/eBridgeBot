@@ -242,11 +242,7 @@ moderate_story(Config) ->
 			#mam_archived{id = MamId2} = xmpp:get_subtag(xmpp:decode(Pkt), #mam_archived{}),
 			AliceModerateIq =
 				#iq{type = set, from = jid:decode(AliceJid), to = RoomJID = jid:decode(RoomJid),
-					sub_els = [#fasten_apply_to{id = MamId2,
-						sub_els = [#message_moderate{retract = #message_retract{}, reason = <<"removed by admin">>}
-%%							sub_els =
-%%						[#message_retract{}, #jingle_reason{text = [#text{data = <<"removed by admin">>}]}]
-				]}]},
+					sub_els = [#fasten_apply_to{id = MamId2, sub_els = [#message_moderate{retract = #message_retract{}, reason = <<"removed by admin">>}]}]},
 			escalus:send(Alice, xmpp:encode(AliceModerateIq)),
 			escalus:assert(is_iq_result, escalus:wait_for_stanza(Alice)),
 			RoomAliceNick = jid:replace_resource(RoomJID, AliceNick),
@@ -342,18 +338,22 @@ reply_story(Config) ->
 	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
 	MucHost = escalus_config:get_ct(muc_host),
 	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
-	AliceNick = escalus_config:get_ct({escalus_users, alice, nick}),
+	[AliceNick, BobNick] = [escalus_config:get_ct({escalus_users, User, nick}) || User <- [alice, bob]],
 	[BotId, Pid, _Component, BotName, BotNick] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, bot_name, nick]],
-	escalus:story(Config, [{alice, 1}],
-		fun(#client{jid = _AliceJid} = Alice) ->
+	escalus:story(Config, [{alice, 1}, {bob, 1}],
+		fun(#client{jid = _AliceJid} = Alice,
+			#client{jid = _BobJid} = Bob) ->
 			DiscoInfoIq = #xmlel{attrs = Attrs} =
 				escalus_stanza:iq_get(?NS_DISCO_INFO, []),
 			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}),
 			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 			true = lists:member(?NS_REPLY, Features),
-
+			Clients = [Alice, Bob],
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
+			enter_room(Bob, RoomJid, BobNick),
+			[escalus_client:wait_for_stanzas(Client, 2) || Client <- Clients],
+
 			AliceMsg = <<"Hi, bot!">>, ReplyMsg = <<"Hi, Alice!">>,
 			AlicePkt = xmpp:set_subtag(Pkt = xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
@@ -408,6 +408,7 @@ reply_story(Config) ->
 			escalus:send(Alice, xmpp:encode(AliceReplyPkt2)),
 			#feature_fallback{} = xmpp:get_subtag(ReplyFallbackPkt = xmpp:decode(escalus:wait_for_stanza(Alice)), #feature_fallback{}),
 			#reply{} = xmpp:get_subtag(ReplyFallbackPkt, #reply{}),
+			escalus_client:wait_for_stanzas(Bob, 6),
 			[#xmpp_link{origin_id = ReplyToId3, uid = #tg_id{}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId3, #xmpp_link.origin_id) end, 1),
 			receive
