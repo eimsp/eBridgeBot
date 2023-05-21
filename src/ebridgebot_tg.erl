@@ -98,10 +98,11 @@ handle_info(#telegram_update{packet_fun = PktFun,
 						packet_fun = PktFun}}}}
 	end;
 handle_info(#telegram_update{msg =
-		#{<<"reply_to_message">> := #{<<"from">> := #{<<"first_name">> := BotName, <<"is_bot">> := true} = From} = ReplyMsg} = TgMsg} = TgUpd,
-	Client, #{bot_name := BotName} = State) ->
-		handle_info(TgUpd#telegram_update{msg = TgMsg#{<<"reply_to_message">> =>
-								ReplyMsg#{<<"from">> => maps:remove(<<"last_name">>, From#{<<"first_name">> => <<>>})}}}, Client, State);
+		#{<<"reply_to_message">> :=
+			#{<<"from">> := #{<<"user_name">> := BotName, <<"is_bot">> := true} = From} = ReplyMsg} = TgMsg} = TgUpd,
+		Client, #{bot_name := BotName} = State) ->
+	handle_info(TgUpd#telegram_update{msg = TgMsg#{<<"reply_to_message">> =>
+								ReplyMsg#{<<"from">> => maps:remove(<<"user_name">>, From#{<<"first_name">> => <<>>})}}}, Client, State);
 handle_info(#telegram_update{packet_fun = PktFun,
 							 msg = #{<<"chat">> := #{<<"id">> := ChatId},
 								    <<"from">> := From,
