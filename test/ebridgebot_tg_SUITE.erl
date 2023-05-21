@@ -57,8 +57,7 @@ init_per_testcase(CaseName, Config) ->
 			fun() ->
 				case ebridgebot_component:start(Args) of
 					{error, {already_started, P}} ->
-						true = exit(P, kill),
-						ebridgebot_component:start(Args);
+						exit(P, kill);
 					Res -> Res
 				end
 			end,
