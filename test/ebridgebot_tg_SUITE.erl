@@ -373,7 +373,7 @@ reply_story(Config) ->
 			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
 			TgReply =
 				#{<<"reply_to_message">> =>
-					#{<<"from">> => #{<<"user_name">> => BotName, <<"first_name">> => BotNick, <<"language_code">> => ?LANG, <<"is_bot">> => true},
+					#{<<"from">> => #{<<"username">> => BotName, <<"first_name">> => BotNick, <<"language_code">> => ?LANG, <<"is_bot">> => true},
 						<<"message_id">> => MessageId,
 						<<"text">> => TgAliceText = <<?NICK(TgAliceName), AliceMsg/binary>>}},
 			From = #{<<"first_name">> => BobNick, <<"language_code">> => ?LANG, <<"is_bot">> => false},
