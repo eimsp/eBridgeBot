@@ -112,12 +112,12 @@ handle_info(#telegram_update{packet_fun = PktFun,
 										  <<"text">> := QuotedText}} = TgMsg},
 	Client, #{bot_id := BotId, nick := Nick} = State) ->
 	?dbg("telegram_update: reply_to_message: ~p", [TgMsg]),
-	TgUsername = full_name(From),
+	[TgFullName, TgReplyName] = [full_name(F) || F <- [From, ReplyFrom]],
 	Text2 = binary:replace(QuotedText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
-	QuotedUser2 = case full_name(ReplyFrom) of <<>> -> <<>>; QuotedUser -> <<$>, QuotedUser/binary>> end,
+	QuotedUser2 = case TgReplyName of <<>> -> <<>>; QuotedUser -> <<$>, QuotedUser/binary>> end,
 	RepliedText = <<QuotedUser2/binary, "\n>", Text2/binary>>,
 	Text3 = <<RepliedText/binary, $\n>>,
-	NickSize = byte_size(<<?NICK(TgUsername)>>),
+	NickSize = byte_size(<<?NICK(TgFullName)>>),
 	PktFun2 =
 		case ebridgebot:index_read(BotId, #tg_id{chat_id = ChatId, id = Id}, #xmpp_link.uid) of
 			[#xmpp_link{origin_id = OriginId} | _] -> %% TODO solve many to many problem!
@@ -273,4 +273,3 @@ full_name(#{<<"first_name">> := FirstName, <<"last_name">> := LastName}) ->
 	<<FirstName/binary, " ", LastName/binary>>;
 full_name(#{<<"first_name">> := FirstName}) ->
 	FirstName.
-
