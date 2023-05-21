@@ -52,8 +52,18 @@ init_per_testcase(CaseName, Config) ->
 					port => escalus_ct:get_config(ejabberd_service_port),
 					rooms => []},
 
-	{ok, Pid} = wait_for_result(fun() -> ebridgebot_component:start(Args) end,
-					fun({ok, _}) -> true; (_) -> false end),
+	{ok, Pid} =
+		wait_for_result(
+			fun() ->
+				case ebridgebot_component:start(Args) of
+					{error, {already_started, P}} ->
+						true = exit(P, kill),
+						ebridgebot_component:start(Args);
+					Res -> Res
+				end
+			end,
+			fun({ok, _}) -> true; (_) -> false end),
+	
 	[_Host, MucHost, Rooms] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
 	[begin
