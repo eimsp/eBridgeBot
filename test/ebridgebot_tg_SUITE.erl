@@ -364,28 +364,29 @@ reply_story(Config) ->
 			enter_room(Bob, RoomJid, BobNick),
 			[escalus_client:wait_for_stanzas(Client, 2) || Client <- Clients],
 
-			AliceMsg = <<"Hi, bot!">>, ReplyMsg = <<"Hi, Alice!">>,
+			AliceMsg = <<"Hi, Bob!">>, ReplyMsg = <<"Hi, Alice!">>,
 			AlicePkt = xmpp:set_subtag(Pkt = xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
 			escalus:send(Alice, xmpp:encode(AlicePkt)),
 			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{origin_id = OriginId, uid = #tg_id{id = MessageId}}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
 			TgReply =
 				#{<<"reply_to_message">> =>
-				#{<<"from">> => #{<<"first_name">> => BotNick, <<"language_code">> => ?LANG},
-					<<"message_id">> => MessageId,
-					<<"text">> => <<?NICK(AliceNick), AliceMsg/binary>>}},
-			TgReplyMsg = tg_message(ChatId, MessageId + 1, AliceNick, ReplyMsg, TgReply),
+					#{<<"from">> => #{<<"first_name">> => BotName, <<"language_code">> => ?LANG, <<"is_bot">> => true},
+						<<"message_id">> => MessageId,
+						<<"text">> => TgAliceText = <<?NICK(TgAliceName), AliceMsg/binary>>}},
+			From = #{<<"first_name">> => BobNick, <<"language_code">> => ?LANG, <<"is_bot">> => false},
+			TgReplyMsg = tg_message(ChatId, MessageId + 1, From, ReplyMsg, TgReply),
 			Pid ! {pe4kin_update, BotName, TgReplyMsg}, %% emulate sending reply message from Telegram
 
-			State = ebridgebot_component:state(Pid),
 			#reply{id = OriginId} = xmpp:get_subtag(ReplyPkt = #message{body = [#text{data = ReplyText}]} =
 				xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
 			#feature_fallback{body = #feature_fallback_body{start = Start, 'end' = End}} = xmpp:get_subtag(ReplyPkt, #feature_fallback{}),
 			OriginalText = binary:part(ReplyText, Start, End - Start),
-			AliceMsg2 = binary:replace(<<?NICK(AliceNick), AliceMsg/binary>>, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
-			OriginalText = <<$>, BotNick/binary, "\n>", AliceMsg2/binary>>,
+			AliceMsg2 = binary:replace(TgAliceText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
+			OriginalText = <<"\n>", AliceMsg2/binary>>,
 			ct:comment(OriginalText),
 
 			AliceReplyPkt = (DecodedPkt = xmpp:decode(Pkt))#message{body = [#text{data = ReplyMsg}],
