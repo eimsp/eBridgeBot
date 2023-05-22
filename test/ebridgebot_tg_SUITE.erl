@@ -327,7 +327,7 @@ upload_story(Config) ->
 				 meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
 				 meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
 				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
-				 #message{id = OriginId, body = [#text{data = <<"from test_bot_tg test_bot_tg\n\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+				 #message{id = OriginId, body = [#text{data = <<"from test_bot_tg test_bot_tg\n \nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 				 ct:comment("received link message: ~s", [Url]),
 				 {ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 					 wait_for_result(fun() ->
@@ -385,7 +385,7 @@ reply_story(Config) ->
 			#feature_fallback{body = #feature_fallback_body{start = Start, 'end' = End}} = xmpp:get_subtag(ReplyPkt, #feature_fallback{}),
 			OriginalText = binary:part(ReplyText, Start, End - Start),
 			AliceMsg2 = binary:replace(TgAliceText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
-			OriginalText = <<"\n>", AliceMsg2/binary>>,
+			OriginalText = <<$>, BotNick/binary,"\n>", AliceMsg2/binary>>,
 			ct:comment(OriginalText),
 
 			AliceReplyPkt = (DecodedPkt = xmpp:decode(Pkt))#message{body = [#text{data = ReplyMsg}],
@@ -442,8 +442,7 @@ tg_message(Message, ChatId, MessageId, Username, Text) ->
 	tg_message(Message, ChatId, MessageId, Username, Text, #{}).
 tg_message(Message, ChatId, MessageId, Username, Text, AddedMap)
 	when is_binary(Username) andalso (Message == <<"message">> orelse Message == <<"edited_message">>) ->
-	From = #{<<"first_name">> => Username,
-		<<"id">> => rand:uniform(10000000000),
+	From = #{	<<"id">> => rand:uniform(10000000000),
 		<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
 		<<"language_code">> => ?LANG,
 		<<"first_name">> => Username,
