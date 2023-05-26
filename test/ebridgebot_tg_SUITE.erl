@@ -13,8 +13,8 @@
 -include("ebridgebot.hrl").
 -include("ebridgebot_tg.hrl").
 
--define(NS_MSG_MODERATE, <<"urn:xmpp:message-moderate:0">>).
 -define(CONTENT_TYPE, "image/png").
+-define(LANG, <<"en">>).
 
 -import(ebridgebot, [wait_for_result/2, wait_for_result/4, wait_for_list/1, wait_for_list/2]).
 
@@ -22,7 +22,7 @@ all() ->
 	[{group, main}].
 
 groups() ->
-	MainStories = [muc_story, subscribe_muc_story, link_scheduler_story, moderate_story, upload_story],
+	MainStories = [muc_story, subscribe_muc_story, link_scheduler_story, moderate_story, upload_story, reply_story],
 	[{main, [sequence], MainStories}, {local, [sequence], MainStories}].
 
 init_per_suite(Config) ->
@@ -44,23 +44,25 @@ init_per_testcase(upload_story, Config) ->
 init_per_testcase(CaseName, Config) ->
 	meck:new(ebridgebot_component, [no_link, passthrough]),
 	meck:expect(ebridgebot_component, process_stanza, send_stanza_fun(self())),
-	[BotArgs = #{bot_id := _BotId} | _] = escalus_ct:get_config(tg_bots),
+	[BotArgs | _] = escalus_ct:get_config(tg_bots),
 	Args = BotArgs#{component => escalus_ct:get_config(ejabberd_service),
-		host => escalus_ct:get_config(ejabberd_addr),
-		upload_host => escalus_ct:get_config(upload_host),
-		password => escalus_ct:get_config(ejabberd_service_password),
-		port => escalus_ct:get_config(ejabberd_service_port),
-		rooms => []
-	},
+					host => escalus_ct:get_config(ejabberd_addr),
+					upload_host => escalus_ct:get_config(upload_host),
+					password => escalus_ct:get_config(ejabberd_service_password),
+					port => escalus_ct:get_config(ejabberd_service_port),
+					rooms => []},
 
-%%	Args = [{component, escalus_ct:get_config(ejabberd_service)},
-%%		{host, escalus_ct:get_config(ejabberd_addr)},
-%%		{upload_host, escalus_ct:get_config(upload_host)},
-%%		{password, escalus_ct:get_config(ejabberd_service_password)},
-%%		{port, escalus_ct:get_config(ejabberd_service_port)},
-%%		{linked_rooms, []}] ++ BotArgs,
-	{ok, Pid} = wait_for_result(fun() -> ebridgebot_component:start(Args) end,
-					fun({ok, _}) -> true; (_) -> false end),
+	{ok, Pid} =
+		wait_for_result(
+			fun() ->
+				case ebridgebot_component:start(Args) of
+					{error, {already_started, P}} ->
+						exit(P, kill);
+					Res -> Res
+				end
+			end,
+			fun({ok, _}) -> true; (_) -> false end),
+	
 	[_Host, MucHost, Rooms] =
 		[escalus_ct:get_config(K) || K <- [ejabberd_domain, muc_host, ebridgebot_rooms]],
 	[begin
@@ -82,7 +84,6 @@ init_per_testcase(CaseName, Config) ->
 		 ok
 	 end || {_, Opts} <- Rooms],
 	[{component_pid, Pid} | maps:to_list(Args) ++ escalus:init_per_testcase(CaseName, Config)].
-%%	[{component_pid, Pid}, {bot_id, BotId} | Args ++ escalus:init_per_testcase(CaseName, Config)].
 
 
 end_per_testcase(upload_story, Config) ->
@@ -101,7 +102,7 @@ end_per_testcase(CaseName, Config) ->
 	catch destroy_room(CaseName, Config),
 	ok = ebridgebot_component:stop(get_property(component_pid, Config)),
 	mnesia:delete_table(ebridgebot:bot_table(get_property(bot_id, Config))),
-	catch meck:unload(ebridgebot_component),
+	catch meck:unload(),
 	escalus:end_per_testcase(CaseName, Config).
 
 destroy_room(CaseName, Config) ->
@@ -109,19 +110,16 @@ destroy_room(CaseName, Config) ->
 	[Rooms, MucHost] = [escalus_ct:get_config(K) || K <- [ebridgebot_rooms, muc_host]],
 	[begin
 		 RoomNode = get_property(name, Opts),
-		 Iq = #iq{type = set,
-			 from = jid:decode(Component), to = jid:make(RoomNode, MucHost),
-			 sub_els = [#muc_owner{destroy = #muc_destroy{}}]},
+		 Iq = #iq{type = set, from = jid:decode(Component), to = jid:make(RoomNode, MucHost), sub_els = [#muc_owner{destroy = #muc_destroy{}}]},
 		 escalus_component:send(Pid, xmpp:encode(Iq)),
 		 case CaseName of
 			 subscribe_muc_story -> ok;
-			 _ ->
-				 receive
-					 destroyed -> ct:print("room destroyed")
-				 after 5000 ->
+			 _ -> receive
+				      destroyed -> ct:comment("room destroyed")
+			      after 5000 ->
 					 ct:comment("room destroy timeout"),
 					 {error, timeout}
-				 end
+			      end
 		 end
 	 end || {_, Opts} <- Rooms].
 
@@ -153,16 +151,18 @@ muc_story(Config) ->
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid, #xmpp_link.uid) end, 2),
 
 			AliceRetractPkt = #message{type = groupchat, to = RoomJID, %% retract from xmpp client
-				sub_els = [#origin_id{id = ebridgebot:gen_uuid()}, #apply_to{id = OriginId2, sub_els = [#retract{}]}]},
+				sub_els = [#origin_id{id = ebridgebot:gen_uuid()}, #fasten_apply_to{id = OriginId2, sub_els = [#message_retract{}]}]},
 			escalus:send(Alice, xmpp:encode(AliceRetractPkt)),
-			#apply_to{id = OriginId2} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #apply_to{}),
+			#fasten_apply_to{id = OriginId2} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #fasten_apply_to{}),
 			[] = wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid, #xmpp_link.uid) end),
 			[] = mnesia:dirty_all_keys(ebridgebot:bot_table(BotId)),
 
 			TgAliceMsg = <<"Hello from telegram!">>, TgAliceMsg2 = <<"2: Hello from telegram!">>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
-			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
-			TgUid2 = TgUid#tg_id{id = MessageId +1},
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), TgAliceMsg/binary>>], FromTgAlicePkt = escalus:wait_for_stanza(Alice)),
+			#message{body = [#text{lang = ?LANG}]} = xmpp:decode(FromTgAlicePkt),
+			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2, mam_id = MamId2}] =
 				wait_for_result(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end,
 					fun([#xmpp_link{mam_id = MamId2}]) when is_binary(MamId2) -> true; (_) -> false end) ,
@@ -170,7 +170,7 @@ muc_story(Config) ->
 
 			%% emulate editing message from Telegram
 			Pid ! {pe4kin_update, BotName, tg_message(<<"edited_message">>, ChatId, MessageId + 1, AliceNick, TgAliceMsg2)},
-			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), TgAliceMsg2/binary>>], escalus:wait_for_stanza(Alice)),
 			[#xmpp_link{uid = TgUid2}, #xmpp_link{uid = TgUid2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 2),
 			ok
@@ -203,8 +203,9 @@ subscribe_muc_story(Config) ->
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 			true = is_binary(MamId),
 			TgAliceMsg = <<"Hello from telegram!">>,
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, TgAliceMsg)}, %% emulate sending message from Telegram
-			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), TgAliceMsg/binary>>], escalus:wait_for_stanza(Alice)),
 			TgUid2 = TgUid#tg_id{id = MessageId + 1},
 			[#xmpp_link{uid = TgUid2, mam_id = _MamId2}] =
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, TgUid2, #xmpp_link.uid) end, 1),
@@ -229,7 +230,7 @@ moderate_story(Config) ->
 				escalus_stanza:iq_get(?NS_DISCO_INFO, []),
 			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}),
 			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
-			true = lists:member(?NS_MSG_MODERATE, Features),
+			true = lists:member(?NS_MESSAGE_MODERATE, Features),
 
 			enter_room(Alice, RoomJid, AliceNick),
 			escalus_client:wait_for_stanzas(Alice, 2),
@@ -245,19 +246,17 @@ moderate_story(Config) ->
 				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
 
 			Pid ! {pe4kin_update, BotName, tg_message(ChatId, MessageId + 1, AliceNick, ComponentMsg)}, %% emulate sending message from Telegram
-			escalus:assert(is_groupchat_message, [<<AliceNick/binary, ":\n", ComponentMsg/binary>>], Pkt = escalus:wait_for_stanza(Alice)),
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
+			escalus:assert(is_groupchat_message, [<<?NICK(TgAliceName), ComponentMsg/binary>>], Pkt = escalus:wait_for_stanza(Alice)),
 			#mam_archived{id = MamId2} = xmpp:get_subtag(xmpp:decode(Pkt), #mam_archived{}),
 			AliceModerateIq =
 				#iq{type = set, from = jid:decode(AliceJid), to = RoomJID = jid:decode(RoomJid),
-					sub_els = [#apply_to{id = MamId2,
-						sub_els = [#moderate{
-							sub_els =
-						[#retract{}, #jingle_reason{text = [#text{data = <<"removed by admin">>}]}]}]}]},
+					sub_els = [#fasten_apply_to{id = MamId2, sub_els = [#message_moderate{retract = #message_retract{}, reason = <<"removed by admin">>}]}]},
 			escalus:send(Alice, xmpp:encode(AliceModerateIq)),
 			escalus:assert(is_iq_result, escalus:wait_for_stanza(Alice)),
 			RoomAliceNick = jid:replace_resource(RoomJID, AliceNick),
-			#apply_to{sub_els = [#moderated{by = RoomAliceNick}]} =
-				xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #apply_to{}),
+			#fasten_apply_to{sub_els = [#message_moderated{by = RoomAliceNick}]} =
+				xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #fasten_apply_to{}),
 			[] = wait_for_list(fun() -> ebridgebot:index_read(BotId, MamId2, #xmpp_link.mam_id) end),
 			[_] = ebridgebot:index_read(BotId, MamId, #xmpp_link.mam_id),
 			ok
@@ -328,7 +327,7 @@ upload_story(Config) ->
 				 meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
 				 meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
 				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
-				 #message{id = OriginId, body = [#text{data = <<"test_bot_tg:\nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+				 #message{id = OriginId, body = [#text{data = <<"from test_bot_tg test_bot_tg\n \nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
 				 ct:comment("received link message: ~s", [Url]),
 				 {ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 					 wait_for_result(fun() ->
@@ -344,52 +343,132 @@ upload_story(Config) ->
 			ok
 		end).
 
+reply_story(Config) ->
+	[RoomNode, ChatId] = [escalus_config:get_ct({ebridgebot_rooms, ebridgebot_test, K}) || K <- [name, chat_id]],
+	MucHost = escalus_config:get_ct(muc_host),
+	RoomJid = jid:to_string({RoomNode, MucHost, <<>>}),
+	[AliceNick, BobNick] = [escalus_config:get_ct({escalus_users, User, nick}) || User <- [alice, bob]],
+	[BotId, Pid, _Component, BotName, BotNick] = [get_property(Key, Config) || Key <- [bot_id, component_pid, component, bot_name, nick]],
+	escalus:story(Config, [{alice, 1}, {bob, 1}],
+		fun(#client{jid = _AliceJid} = Alice,
+			#client{jid = _BobJid} = Bob) ->
+			DiscoInfoIq = #xmlel{attrs = Attrs} =
+				escalus_stanza:iq_get(?NS_DISCO_INFO, []),
+			escalus:send(Alice, DiscoInfoIq#xmlel{attrs = [{<<"to">>, RoomJid} | Attrs]}),
+			#iq{sub_els = [#disco_info{features = Features}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+			true = lists:member(?NS_REPLY, Features),
+			Clients = [Alice, Bob],
+			enter_room(Alice, RoomJid, AliceNick),
+			escalus_client:wait_for_stanzas(Alice, 2),
+			enter_room(Bob, RoomJid, BobNick),
+			[escalus_client:wait_for_stanzas(Client, 2) || Client <- Clients],
+
+			AliceMsg = <<"Hi, Bob!">>, ReplyMsg = <<"Hi, Alice!">>,
+			AlicePkt = xmpp:set_subtag(Pkt = xmpp:decode(escalus_stanza:groupchat_to(RoomJid, AliceMsg)), #origin_id{id = OriginId = ebridgebot:gen_uuid()}),
+			escalus:send(Alice, xmpp:encode(AlicePkt)),
+			escalus:assert(is_groupchat_message, [AliceMsg], escalus:wait_for_stanza(Alice)),
+			[#xmpp_link{origin_id = OriginId, uid = #tg_id{id = MessageId}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, OriginId, #xmpp_link.origin_id) end, 1),
+
+			TgAliceName = <<AliceNick/binary, " ", AliceNick/binary>>,
+			TgReply =
+				#{<<"reply_to_message">> =>
+					#{<<"from">> => #{<<"username">> => BotName, <<"first_name">> => BotNick, <<"language_code">> => ?LANG, <<"is_bot">> => true},
+						<<"message_id">> => MessageId,
+						<<"text">> => TgAliceText = <<?NICK(TgAliceName), AliceMsg/binary>>}},
+			From = #{<<"first_name">> => BobNick, <<"language_code">> => ?LANG, <<"is_bot">> => false},
+			TgReplyMsg = tg_message(ChatId, MessageId + 1, From, ReplyMsg, TgReply),
+			Pid ! {pe4kin_update, BotName, TgReplyMsg}, %% emulate sending reply message from Telegram
+
+			#reply{id = OriginId} = xmpp:get_subtag(ReplyPkt = #message{body = [#text{data = ReplyText}]} =
+				xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
+			#feature_fallback{body = #feature_fallback_body{start = Start, 'end' = End}} = xmpp:get_subtag(ReplyPkt, #feature_fallback{}),
+			OriginalText = binary:part(ReplyText, Start, End - Start),
+			AliceMsg2 = binary:replace(TgAliceText, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
+			OriginalText = <<$>, BotNick/binary,"\n>", AliceMsg2/binary>>,
+			ct:comment(OriginalText),
+
+			AliceReplyPkt = (DecodedPkt = xmpp:decode(Pkt))#message{body = [#text{data = ReplyMsg}],
+				sub_els = [#origin_id{id = ReplyToId = ebridgebot:gen_uuid()}, #reply{id = OriginId, to = jid:decode(RoomJid)}]},
+			escalus:send(Alice, xmpp:encode(AliceReplyPkt)),
+			#reply{} = xmpp:get_subtag(xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
+			[#xmpp_link{origin_id = ReplyToId, uid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId, #xmpp_link.origin_id) end, 1),
+
+			ReplyEditMsg = <<"Hi, Alice! (edited)">>,
+			AliceReplyEditPkt = AliceReplyPkt#message{body = [#text{data = ReplyEditMsg}],
+				sub_els = [#origin_id{id = ReplyToId2 = ebridgebot:gen_uuid()}, #reply{id = OriginId, to = jid:decode(RoomJid)}, #replace{id = ReplyToId}]},
+
+			escalus:send(Alice, xmpp:encode(AliceReplyEditPkt)),
+			#reply{} = xmpp:get_subtag(#message{body = [#text{data = ReplyEditMsg}]} = xmpp:decode(escalus:wait_for_stanza(Alice)), #reply{}),
+			[#xmpp_link{origin_id = ReplyToId2, uid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId2, #xmpp_link.origin_id) end, 1),
+			State = ebridgebot_component:state(Pid), %% same state
+
+			%% send fallback reply packet
+			AliceReplyMsg = binary:replace(AliceMsg, <<"\n">>, <<">">>, [global, {insert_replaced, 0}]),
+			RepliedAliceText = <<$>, AliceNick/binary, "\n>", AliceReplyMsg/binary>>,
+			AliceFullReplyMsg = <<RepliedAliceText/binary, $\n, ReplyMsg/binary>>, %% message with fallback reply
+			AliceReplyPkt2 = DecodedPkt#message{
+				body = [#text{data = AliceFullReplyMsg}],
+				sub_els = [#origin_id{id = ReplyToId3 = ebridgebot:gen_uuid()},
+					#reply{id = OriginId, to = jid:decode(RoomJid)},
+					#feature_fallback{body = #feature_fallback_body{start = 0, 'end' = byte_size(RepliedAliceText) + 1}}]},
+			meck:expect(ebridgebot_tg, send_message, send_message_fun(self())),
+			escalus:send(Alice, xmpp:encode(AliceReplyPkt2)),
+			#feature_fallback{} = xmpp:get_subtag(ReplyFallbackPkt = xmpp:decode(escalus:wait_for_stanza(Alice)), #feature_fallback{}),
+			#reply{} = xmpp:get_subtag(ReplyFallbackPkt, #reply{}),
+			escalus_client:wait_for_stanzas(Bob, 6),
+			[#xmpp_link{origin_id = ReplyToId3, uid = #tg_id{}}] =
+				wait_for_list(fun() -> ebridgebot:index_read(BotId, ReplyToId3, #xmpp_link.origin_id) end, 1),
+			receive
+				#{text := ReplyMsg} ->
+					ct:comment("reply: ~s", [ReplyMsg]);
+				#{text := ReplyWrongText} ->
+					ct:comment("reply wrong: ~s", [ReplyWrongText]),
+					?assert(false)
+			after 2000 ->
+				ct:comment("reply timeout"),
+				?assert(false)
+			end
+		end).
+
 %% tg test API
-tg_message(ChatId, MessageId, Username, Text) ->
-	tg_message(<<"message">>, ChatId, MessageId, Username, Text).
-tg_message(Message, ChatId, MessageId, Username, Text) %% emulate Telegram message
+tg_message(ChatId, MessageId, Username, Text) when is_integer(ChatId) ->
+	tg_message(<<"message">>, ChatId, MessageId, Username, Text, #{}).
+tg_message(ChatId, MessageId, Username, Text, #{} = AddedMap) when is_integer(ChatId) ->
+	tg_message(<<"message">>, ChatId, MessageId, Username, Text, AddedMap);
+tg_message(Message, ChatId, MessageId, Username, Text) ->
+	tg_message(Message, ChatId, MessageId, Username, Text, #{}).
+tg_message(Message, ChatId, MessageId, Username, Text, AddedMap)
+	when is_binary(Username) andalso (Message == <<"message">> orelse Message == <<"edited_message">>) ->
+	From = #{	<<"id">> => rand:uniform(10000000000),
+		<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
+		<<"language_code">> => ?LANG,
+		<<"first_name">> => Username,
+		<<"last_name">> => Username,
+		<<"username">> => Username},
+	tg_message(Message, ChatId, MessageId, From, Text, AddedMap);
+tg_message(Message, ChatId, MessageId, #{} = From, Text, #{} = AddedMap) %% emulate Telegram message
 	when Message == <<"message">>; Message == <<"edited_message">> ->
-	#{Message =>
-	#{<<"chat">> =>
-	#{<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>,
-		<<"type">> => <<"group">>},
-		<<"date">> => erlang:system_time(second),
-		<<"from">> =>
-		#{<<"first_name">> => Username,
-			<<"id">> => rand:uniform(10000000000),
-			<<"is_bot">> => false, %% TODO update if <<"is_bot">> == true
-			<<"language_code">> => <<"en">>,
-			<<"last_name">> => Username,
-			<<"username">> => Username},
-		<<"message_id">> => MessageId, <<"text">> => Text},
-		<<"update_id">> => rand:uniform(10000000000)}.
+	Msg = #{<<"chat">> => #{<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>, <<"type">> => <<"group">>},
+			<<"date">> => erlang:system_time(second),
+			<<"from">> => From,
+			<<"message_id">> => MessageId},
+	Msg2 = case is_binary(Text) of true -> Msg#{<<"text">> => Text}; _ -> Msg end,
+	#{Message => maps:merge(AddedMap, Msg2), <<"update_id">> => rand:uniform(10000000000)}.
 
 tg_upload_message(MessageId, ChatId, Filename, FileSize, Username, Caption) ->
 	UploadData = #{<<"file_id">> => ebridgebot:gen_uuid(), <<"file_size">> => FileSize},
-	{Type, Upload} =
+	UploadMap =
 		case hd(mimetypes:filename(Filename)) of
-			<<"audio/oga">> ->          {<<"voice">>, UploadData};
-			<<"audio/", _/binary>> ->   {<<"audio">>, UploadData};
-			<<"image/", _/binary>> ->   {<<"photo">>, lists:duplicate(3, UploadData)};
-			<<"video/", _/binary>> ->   {<<"video">>, UploadData};
-		_ ->                            {<<"document">>, UploadData}
+			<<"audio/oga">>         -> #{<<"voice">> => UploadData};
+			<<"audio/", _/binary>>  -> #{<<"audio">> => UploadData};
+			<<"image/", _/binary>>  -> #{<<"photo">> => lists:duplicate(3, UploadData)};
+			<<"video/", _/binary>>  -> #{<<"video">> => UploadData};
+			_                       -> #{<<"document">> => UploadData}
 		end,
-	#{<<"message">> =>
-		#{<<"caption">> => Caption,
-		  <<"chat">> =>
-			#{<<"all_members_are_administrators">> => true,
-				<<"id">> => ChatId, <<"title">> => <<"RoomTitle">>,
-				<<"type">> => <<"group">>},
-			 <<"date">> => erlang:system_time(second),
-		 Type => Upload,
-		 <<"from">> =>
-			#{<<"first_name">> => Username,
-				<<"id">> => rand:uniform(10000000000), <<"is_bot">> => false,
-				<<"language_code">> => <<"en">>,
-				<<"last_name">> => Username,
-				<<"username">> => Username},
-		<<"message_id">> => MessageId},
-		<<"update_id">> => rand:uniform(10000000000)}.
+	tg_message(ChatId, MessageId, Username, [], UploadMap#{<<"caption">> => Caption}).
 
 %% test API
 get_property(PropName, Proplist) ->
@@ -432,4 +511,12 @@ send_stanza_fun(Pid) ->
 				Res;
 			_ -> meck:passthrough([Stanza, Client, State])
 		end
+	end.
+
+send_message_fun(Pid) ->
+	fun(#{reply_to := _} = State) ->
+			Res = meck:passthrough([State]),
+			Pid ! State, Res;
+		(State) ->
+			meck:passthrough([State])
 	end.
