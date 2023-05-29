@@ -163,10 +163,10 @@ pkt_fun(text, PktFun, Text) ->
 		Pkt2#message{body = [Txt#text{data = <<OrigText/binary, Text/binary>>}]}
 	end.
 
--spec fold_pkt_fun(list({type | from | tag | text, binary() | xmpp_element()}), function()) -> function().
-fold_pkt_fun([], PktFun) -> PktFun;
-fold_pkt_fun([{K, V} | T], PktFun) ->
-	fold_pkt_fun(T, pkt_fun(K, PktFun, V)).
+-spec fold_pkt_fun(function(), list({type | from | tag | text, binary() | xmpp_element()})) -> function().
+fold_pkt_fun(PktFun, []) -> PktFun;
+fold_pkt_fun(PktFun, [{K, V} | T]) ->
+	fold_pkt_fun(pkt_fun(K, PktFun, V), T).
 
 -spec send_to(pid() | term(), function(), binary(), atom(), term()) -> ok.
 send_to(Client, PktFun, To, BotId, Uid) ->
