@@ -329,7 +329,7 @@ upload_story(Config) ->
 				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"TesBotName">>, <<"Hello, upload!">>)},
 				 UploadPkt = #message{id = OriginId, body = [#text{data = <<"from TesBotName TesBotName\n \nHello, upload!\n", Url/binary>>}]}
 					 = xmpp:decode(escalus:wait_for_stanza(Alice)),
-				 #message_upload{url = Url} = xmpp:get_subtag(UploadPkt, #message_upload{}),
+				 #message_upload{body = [#message_upload_body{url = Url}]} = xmpp:get_subtag(UploadPkt, #message_upload{}),
 				 ct:comment("received link message: ~s", [Url]),
 				 {ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 					 wait_for_result(fun() ->
