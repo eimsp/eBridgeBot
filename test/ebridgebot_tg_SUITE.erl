@@ -326,8 +326,10 @@ upload_story(Config) ->
 				 FileName = filename(Ext),
 				 meck:expect(ebridgebot_tg, get_file, fun(_) -> {ok, Data} end),
 				 meck:expect(pe4kin, get_file, fun(_, _) -> {ok, #{<<"file_path">> => FileName, <<"file_size">> => Size}} end),
-				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"test_bot_tg">>, <<"Hello, upload!">>)},
-				 #message{id = OriginId, body = [#text{data = <<"from test_bot_tg test_bot_tg\n \nHello, upload!\n", Url/binary>>}]} = xmpp:decode(escalus:wait_for_stanza(Alice)),
+				 Pid ! {pe4kin_update, BotName, tg_upload_message(MessageId, ChatId, FileName, Size, <<"TesBotName">>, <<"Hello, upload!">>)},
+				 UploadPkt = #message{id = OriginId, body = [#text{data = <<"from TesBotName TesBotName\n \nHello, upload!\n", Url/binary>>}]}
+					 = xmpp:decode(escalus:wait_for_stanza(Alice)),
+				 #message_upload{body = [#message_upload_body{url = Url}]} = xmpp:get_subtag(UploadPkt, #message_upload{}),
 				 ct:comment("received link message: ~s", [Url]),
 				 {ok, {{"HTTP/1.1", 200, _}, _, Data}} =
 					 wait_for_result(fun() ->

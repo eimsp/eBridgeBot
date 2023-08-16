@@ -43,7 +43,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 		Client, #{component := ComponentJid} = State) ->
 	?dbg("handle component: message: ~p", [TgMsg]),
 	TgUserName = full_name(From),
-	PktFun2 = ebridgebot:fold_pkt_fun([{lang, Lang}, {from, ComponentJid}, {text, <<?NICK(TgUserName)>>}], PktFun),
+	PktFun2 = ebridgebot:fold_pkt_fun(PktFun, [{lang, Lang}, {from, ComponentJid}, {text, <<?NICK(TgUserName)>>}]),
 	handle_info(#telegram_update{msg = TgMsg, packet_fun = PktFun2}, Client, State);
 handle_info(#telegram_update{msg = #{<<"entities">> := [#{<<"offset">> := 0, <<"type">> := <<"bot_command">>} | _]} = TgMsg}, _Client,
 	#{ignore_commands := true} = State) ->
@@ -125,7 +125,7 @@ handle_info(#telegram_update{packet_fun = PktFun,
 				fun(Pkt, To) ->
 					ReplyTag = #reply{id = OriginId, to = jid:replace_resource(jid:decode(To), Nick)},
 					FallbackTag = #feature_fallback{for = ?NS_REPLY, body = #feature_fallback_body{start = NickSize, 'end' = NickSize + byte_size(RepliedText)}},
-					(ebridgebot:fold_pkt_fun([{tag, [ReplyTag, FallbackTag]}, {text, Text3}], PktFun))(Pkt, To)
+					(ebridgebot:fold_pkt_fun(PktFun, [{tag, [ReplyTag, FallbackTag]}, {text, Text3}]))(Pkt, To)
 				end;
 			[] -> PktFun
 		end,
