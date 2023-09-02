@@ -184,6 +184,7 @@ handle_info(Info, _Client, State) ->
 	{ok, #tg_id{}} | {error, atom(), term()}.
 send_message(#{bot_name := BotName, chat_id := ChatId} = State) ->
 	Msg = msg_reply(msg_format(State), State),
+	?dbg("tg: send_message: ~p", [Msg]),
 	format(pe4kin:send_message(BotName, Msg#{chat_id => ChatId})).
 
 -spec edit_message(#{bot_name => atom(), uid => #tg_id{}, text => binary(), usernick => binary(), format => #{} | #{usernick => atom() | binary()}}) ->
