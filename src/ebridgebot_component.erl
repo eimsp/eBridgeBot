@@ -60,7 +60,8 @@ handle_info({add_room, ChatId, MucJid, Password} = Info, _Client, #{rooms := Roo
 handle_info({presence, #{type := Type, jid := MucJid} = MucMap} = Info, Client, #{component := Component, nick := Nick} = State)
 	when Type == available; Type == unavailable ->
 	?dbg("handle: ~p", [Info]),
-	EnterPresence = #presence{type = Type, from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick),
+	Nick2 = case MucMap of #{nick := N} -> N; _ -> Nick end,
+	EnterPresence = #presence{type = Type, from = jid:make(Component), to = jid:replace_resource(jid:decode(MucJid), Nick2),
 		sub_els = [#muc{password = ebridgebot:password(MucMap)}]},
 	escalus:send(Client, xmpp:encode(EnterPresence)),
 	{ok, State};
