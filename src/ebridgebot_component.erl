@@ -209,10 +209,11 @@ process_stanza(#replace{}, [{uid, Uid}, #message{type = groupchat, body = [#text
 	Module:edit_message(State#{uid => Uid, text => Text}),
 	ebridgebot:write_link(BotId, xmpp:get_subtag(Pkt, #origin_id{}), Uid, xmpp:get_subtag(Pkt, #mam_archived{})),
 	{ok, State};
-process_stanza(#fasten_apply_to{sub_els = [#message_moderated{retract = #message_retract{}}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
+%% old message_retract eq retract_id
+process_stanza(#fasten_apply_to{sub_els = [#message_moderated_21{retract = #retract_id{}}]}, [{uid, _Uid}, Pkt | _] = Args) -> %% retract message from groupchat by moderator
 	?dbg("moderator retract: ~p", [Pkt]),
-	process_stanza(#fasten_apply_to{sub_els = [#message_retract{}]}, Args);
-process_stanza(#fasten_apply_to{sub_els = [#message_retract{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
+	process_stanza(#fasten_apply_to{sub_els = [#retract_id{}]}, Args);
+process_stanza(#fasten_apply_to{sub_els = [#retract_id{}]}, [{uid, Uid}, #message{type = groupchat} = Pkt,
 	#{bot_id := BotId, module := Module} = State | _]) -> %% retract message from xmpp groupchat
 	?dbg("retract: ~p", [Pkt]),
 	Module:delete_message(State#{uid => Uid}),
@@ -224,7 +225,7 @@ process_stanza(Tag, [#message{type = groupchat, from = #jid{} = From} = Pkt, #{b
 	?dbg("replace or retract msg to third party client: ~p", [Pkt]),
 	MucFrom = jid:encode(jid:remove_resource(From)),
 	Id = element(#fasten_apply_to.id = #replace.id, Tag), %% #fasten_apply_to.id == #replace.id
-	Attr = case Tag of #fasten_apply_to{sub_els = [#message_moderated{}]} -> #xmpp_link.mam_id; _ -> #xmpp_link.origin_id end,
+	Attr = case Tag of #fasten_apply_to{sub_els = [#message_moderated_21{}]} -> #xmpp_link.mam_id; _ -> #xmpp_link.origin_id end,
 	Links = ebridgebot:index_read(BotId, Id, Attr),
 	[case lists:filter(Module:link_pred(State#{group_id => ChatId}), Links) of
 		 [#xmpp_link{uid = Uid} | _] ->
